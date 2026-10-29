@@ -1,0 +1,16 @@
+{
+  "name": "nav-tcl",
+  "version": "1.0.0",
+  "description": "Navigation de suivi de ligne bus TCL (Lyon) - PWA mobile",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "data": "node scripts/fetch-data.mjs",
+    "vendor": "cp node_modules/leaflet/dist/leaflet.js node_modules/leaflet/dist/leaflet.css vendor/leaflet/ && cp -r node_modules/leaflet/dist/images vendor/leaflet/",
+    "serve": "npx --yes serve -l 8080 ."
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4"
+  }
+}

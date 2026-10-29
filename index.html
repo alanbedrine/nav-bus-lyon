@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>nav-tcl</title>
+  <meta name="description" content="Navigation en suivi de ligne pour les bus TCL (Lyon)">
+  <meta name="theme-color" content="#0b0b0c">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="nav-tcl">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="map" aria-label="Carte"></div>
+
+  <!-- Accueil : recherche de ligne -->
+  <section id="home" class="sheet" aria-label="Lignes">
+    <div class="grabber" aria-hidden="true"></div>
+    <header class="brand">
+      <span class="logo"><b>nav</b><i>tcl</i></span>
+      <button id="btn-install" class="chip" hidden>Ajouter à l’écran d’accueil</button>
+    </header>
+    <label class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+      <input id="q" type="search" inputmode="search" autocomplete="off" placeholder="Rechercher une ligne ou un terminus" aria-label="Rechercher une ligne ou un terminus">
+    </label>
+    <p id="data-status" class="muted" role="status"></p>
+    <ul id="lines" class="list"></ul>
+  </section>
+
+  <!-- Choix du terminus -->
+  <section id="line" class="sheet" aria-label="Terminus" hidden>
+    <div class="grabber" aria-hidden="true"></div>
+    <header class="line-head">
+      <button id="btn-back" class="icon-btn" aria-label="Retour"><svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></svg></button>
+      <span id="line-badge" class="badge big"></span>
+      <h1 id="line-title">Ligne</h1>
+    </header>
+    <p class="muted">Choisissez le terminus de destination</p>
+    <ul id="directions" class="list"></ul>
+  </section>
+
+  <!-- Navigation -->
+  <section id="nav" hidden>
+    <div class="topcard">
+      <span id="nav-badge" class="badge"></span>
+      <div class="topcard-text">
+        <small>Vers</small>
+        <strong id="nav-dest"></strong>
+      </div>
+      <div class="topcard-stats">
+        <strong id="nav-remaining">–</strong>
+        <small id="nav-eta">–</small>
+      </div>
+      <div class="progress" aria-hidden="true"><i id="nav-progress"></i></div>
+    </div>
+
+    <div id="off-banner" class="banner" role="alert" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3Zm0 6v6m0 3v.01"/></svg>
+      <div><strong>Délocalisé</strong><span id="off-text">Rejoignez le tracé de la ligne</span></div>
+    </div>
+    <div id="arrived-banner" class="banner ok" role="status" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>
+      <div><strong>Terminus atteint</strong><span>Faites un retournement ou terminez</span></div>
+    </div>
+
+    <div class="speedbox" aria-live="off">
+      <div class="speed"><strong id="speed">0</strong><small>km/h</small></div>
+      <div id="limit" class="limit" title="Limitation de vitesse" hidden><span id="limit-val">–</span></div>
+    </div>
+    <button id="btn-recenter" class="fab" aria-label="Recentrer"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></svg></button>
+
+    <div class="actions">
+      <button id="btn-turn" class="btn ghost"><svg viewBox="0 0 24 24"><path d="M7 7h9a4 4 0 0 1 0 8H8m0 0 3-3m-3 3 3 3M7 7l3-3M7 7l3 3"/></svg>Retournement</button>
+      <button id="btn-end" class="btn danger"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Terminer</button>
+    </div>
+  </section>
+
+  <!-- Localisation requise -->
+  <section id="gate" class="overlay" role="alertdialog" aria-labelledby="gate-title" aria-describedby="gate-text">
+    <div class="gate-card">
+      <div class="pin"><svg viewBox="0 0 24 24"><path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12Z"/><circle cx="12" cy="10" r="2.5"/></svg></div>
+      <h2 id="gate-title">Localisation requise</h2>
+      <p id="gate-text">nav-tcl a besoin de votre position pour suivre la ligne.</p>
+      <p id="gate-help" class="muted" hidden></p>
+      <button id="btn-retry" class="btn primary" hidden>Redemander la localisation</button>
+    </div>
+  </section>
+
+  <!-- Boîte de dialogue -->
+  <section id="dialog" class="overlay dim" role="dialog" aria-modal="true" aria-labelledby="dlg-title" hidden>
+    <div class="dialog-card">
+      <h2 id="dlg-title"></h2>
+      <p id="dlg-text" class="muted"></p>
+      <div class="dialog-actions">
+        <button id="dlg-cancel" class="btn ghost">Annuler</button>
+        <button id="dlg-ok" class="btn primary">OK</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="toast" role="status" hidden></div>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

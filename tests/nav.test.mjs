@@ -93,3 +93,19 @@ test('normalisation : exclusion métro/tram/funiculaire, chaînage, couleur', ()
   assert.equal(index.lines[0].color, '#ff0000');
   assert.equal(routes.C3.variants.length, 2);
 });
+
+import { isMobileOrTablet } from '../js/guard.js';
+
+test('garde mobile / tablette : agent + taille d\'écran', () => {
+  const phone = { userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36', maxTouchPoints: 5 };
+  const iphone = { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148', maxTouchPoints: 5 };
+  const ipadOS = { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17 Safari/605.1.15', maxTouchPoints: 5 };
+  const mac = { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17 Safari/605.1.15', maxTouchPoints: 0 };
+  const win = { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36', maxTouchPoints: 0 };
+  assert.equal(isMobileOrTablet(phone, { width: 412, height: 915 }), true);
+  assert.equal(isMobileOrTablet(iphone, { width: 390, height: 844 }), true);
+  assert.equal(isMobileOrTablet(ipadOS, { width: 820, height: 1180 }), true);
+  assert.equal(isMobileOrTablet(mac, { width: 1440, height: 900 }), false);
+  assert.equal(isMobileOrTablet(win, { width: 1920, height: 1080 }), false);
+  assert.equal(isMobileOrTablet(phone, { width: 1920, height: 1920 }), false); // UA mobile usurpé sur grand écran
+});

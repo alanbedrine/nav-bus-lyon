@@ -8,6 +8,8 @@
   --text: #f5f5f6;
   --muted: #a3a3ad;
   --ok: #3ddc84;
+  --card: rgba(11,11,12,.94);
+  --map-bg: #111;
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -19,9 +21,9 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .muted { color: var(--muted); font-size: 14px; margin: 4px 0 10px; }
 
-#map { position: fixed; inset: 0; background: #111; }
-.leaflet-container { background: #111; font: inherit; }
-.leaflet-control-attribution { background: rgba(11,11,12,.7) !important; color: #888 !important; font-size: 9px; }
+#map { position: fixed; inset: 0; background: var(--map-bg); }
+.leaflet-container { background: var(--map-bg); font: inherit; }
+.leaflet-control-attribution { background: var(--card) !important; color: #888 !important; font-size: 9px; }
 .leaflet-control-attribution a { color: #aaa !important; }
 
 /* Feuilles */
@@ -63,7 +65,7 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 #nav { position: fixed; inset: 0; pointer-events: none; z-index: 500; }
 #nav > * { pointer-events: auto; }
 .topcard {
-  position: absolute; left: 12px; right: 12px; top: calc(10px + var(--safe-t)); background: rgba(11,11,12,.94);
+  position: absolute; left: 12px; right: 12px; top: calc(10px + var(--safe-t)); background: var(--card);
   border: 1px solid var(--line); border-radius: 22px; padding: 14px 16px 18px; display: flex; align-items: center; gap: 12px;
   box-shadow: 0 10px 30px rgba(0,0,0,.5); backdrop-filter: blur(10px);
 }
@@ -71,7 +73,7 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .topcard small, .topcard-stats small { color: var(--muted); font-size: 12px; display: block; }
 .topcard-text strong { font-size: 18px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .topcard-stats { text-align: right; }
-.topcard-stats strong { font-size: 20px; color: #fff; }
+.topcard-stats strong { font-size: 20px; color: var(--text); }
 .progress { position: absolute; left: 16px; right: 16px; bottom: 8px; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
 .progress i { display: block; height: 100%; width: 0; background: var(--red); transition: width .4s; }
 
@@ -86,21 +88,21 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 @keyframes pulse { 50% { box-shadow: 0 10px 40px rgba(227,6,19,.75); } }
 
 .speedbox { position: absolute; left: 12px; bottom: calc(104px + var(--safe-b)); display: flex; align-items: flex-end; gap: 10px; }
-.speed { background: rgba(11,11,12,.94); border: 1px solid var(--line); border-radius: 20px; padding: 8px 16px; text-align: center; min-width: 92px; }
+.speed { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 8px 16px; text-align: center; min-width: 92px; }
 .speed strong { font-size: 40px; line-height: 1; font-variant-numeric: tabular-nums; display: block; }
 .speed small { color: var(--muted); font-size: 12px; }
 .speed.over strong { color: var(--red); }
 .limit { width: 62px; height: 62px; border-radius: 50%; background: #fff; border: 6px solid var(--red); display: grid; place-items: center; color: #111; font-weight: 800; font-size: 22px; box-shadow: 0 6px 18px rgba(0,0,0,.5); }
 .limit.est { border-style: dashed; }
 
-.fab { position: absolute; right: 12px; bottom: calc(112px + var(--safe-b)); width: 52px; height: 52px; border-radius: 18px; background: rgba(11,11,12,.94); border: 1px solid var(--line); display: grid; place-items: center; }
+.fab { position: absolute; right: 12px; bottom: calc(112px + var(--safe-b)); width: 52px; height: 52px; border-radius: 18px; background: var(--card); border: 1px solid var(--line); display: grid; place-items: center; }
 
 .actions { position: absolute; left: 12px; right: 12px; bottom: calc(14px + var(--safe-b)); display: flex; gap: 10px; }
 .btn { height: 56px; border-radius: 18px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; font-weight: 700; font-size: 16px; padding: 0 20px; }
 .actions .btn { flex: 1; }
 .btn.primary { background: var(--red); color: #fff; }
 .btn.danger { background: var(--red); color: #fff; }
-.btn.ghost { background: rgba(28,28,32,.96); border: 1px solid var(--line); }
+.btn.ghost { background: var(--card); border: 1px solid var(--line); }
 .btn:active { transform: scale(.98); }
 
 /* Overlays */
@@ -127,3 +129,29 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .info h2 { margin: 0 0 6px; font-size: 17px; }
 .info p { margin: 0 0 8px; font-size: 14px; line-height: 1.4; }
 .info .btn { width: 100%; height: 48px; margin-top: 4px; }
+
+/* Thème clair */
+:root[data-theme="light"] {
+  --black: #f4f4f6; --ink: #ffffff; --ink-2: #f0f0f3; --line: #dedee3;
+  --text: #111114; --muted: #5c5c68; --ok: #12804a;
+  --card: rgba(255,255,255,.95); --map-bg: #e9e9ec; color-scheme: light;
+}
+:root[data-theme="light"] .banner.ok { background: #e7f8ee; }
+:root[data-theme="light"] .sheet, :root[data-theme="light"] .topcard, :root[data-theme="light"] .info { box-shadow: 0 6px 24px rgba(0,0,0,.15); }
+:root[data-theme="light"] .leaflet-control-attribution, :root[data-theme="light"] .leaflet-control-attribution a { color: #555 !important; }
+
+/* Boutons de thème */
+.brand-actions { display: flex; align-items: center; gap: 8px; }
+.i-moon { display: none; }
+:root[data-theme="light"] .i-sun { display: none; }
+:root[data-theme="light"] .i-moon { display: block; }
+.fab.second { bottom: calc(176px + var(--safe-b)); }
+
+/* Page réservée aux mobiles / tablettes */
+body.desktop-blocked > *:not(#desktop) { display: none !important; }
+
+/* En-tête : le logo ne passe jamais à la ligne, les actions descendent si besoin */
+.brand { flex-wrap: wrap; gap: 8px; }
+.logo { white-space: nowrap; flex: none; }
+.chip { white-space: nowrap; }
+.brand-actions { margin-left: auto; }

@@ -9,6 +9,10 @@ Navigation « suivi de ligne » pour les bus TCL (Lyon), en PWA mobile. Rouge et
 - **Retournement** (repart dans l'autre sens) et **Terminer**.
 - Vitesse actuelle (GPS) et limitation de vitesse (OpenStreetMap), écran maintenu allumé (Wake Lock).
 - Installable (manifest + service worker) : « Ajouter à l'écran d'accueil ».
+- **Reprise** : un cookie technique de 3 h (`navlb_session`, ligne + sens, prolongé pendant la navigation, effacé à « Terminer ») relance la navigation si l'on ferme puis rouvre l'appli.
+- **Thème clair / sombre** (boutons dans l'accueil et en navigation, mémorisé), fond de carte assorti.
+- **Mobiles et tablettes uniquement** : sur PC, une page explicative remplace l'appli (`js/guard.js`, agent utilisateur + taille d'écran).
+- **France uniquement, aucun robot, aucun référencement** : voir « Protection » ci-dessous.
 
 ## Démarrage
 
@@ -21,6 +25,18 @@ npm run serve          # http://localhost:8080
 
 L'appli est 100 % statique (aucun build). La géolocalisation exige **HTTPS** (ou `localhost`) :
 déployez le dossier sur Cloudflare Pages, Netlify, Vercel, etc. (GitHub Pages sur dépôt privé demande un compte payant).
+
+## Protection (France uniquement, anti-bots, non référencé)
+
+Un site statique ne peut pas filtrer par pays : le filtre est dans `functions/_middleware.js` (**Cloudflare Pages Functions**).
+Il refuse (403) toute requête dont le pays n'est pas `FR`, tout agent utilisateur de robot ou vide, et ajoute `X-Robots-Tag: noindex…`.
+`robots.txt` interdit tout (y compris les robots d'IA), `index.html` porte `noindex, nofollow`, et `_headers` pose les en-têtes de sécurité.
+
+Déploiement : Cloudflare Pages, dossier racine du dépôt, aucune commande de build. Variable `ALLOW_ALL=1` pour désactiver le filtre en développement.
+Avec Cloudflare, vous pouvez aussi ajouter une règle WAF `ip.geoip.country ne "FR"` -> Bloquer, et activer le blocage des robots d'IA.
+
+Limites : un VPN français contourne le filtre pays ; `robots.txt` n'est respecté que par les robots honnêtes (d'où le blocage par agent utilisateur) ;
+ne partagez pas l'adresse publiquement (un lien public suffit parfois à faire apparaître une URL dans un moteur de recherche).
 
 ## Données
 

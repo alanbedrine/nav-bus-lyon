@@ -62,11 +62,15 @@ function ask({ title, text, ok = 'OK', cancel = 'Annuler' }) {
 /* ---------- Carte ---------- */
 
 const map = L.map('map', { zoomControl: false, attributionControl: true, preferCanvas: true }).setView([45.764, 4.8357], 13);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+const TILE_OPTS = {
   subdomains: 'abcd',
   maxZoom: 19,
   attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a>',
-}).addTo(map);
+};
+const tiles = {
+  dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', TILE_OPTS),
+  light: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', TILE_OPTS),
+};
 
 const meIcon = L.divIcon({
   className: 'me',
@@ -94,6 +98,35 @@ function centerOffset(latlng, zoom, shiftRatio = 0.16) {
   return map.unproject(p, zoom);
 }
 
+/* ---------- Thème clair / sombre ---------- */
+
+const THEME_KEY = 'nav-lyon-bus:theme';
+const THEME_COLORS = {
+  dark: { halo: '#000', done: '#5a1115', bar: '#0b0b0c' },
+  light: { halo: '#fff', done: '#f0b3b7', bar: '#f4f4f6' },
+};
+let theme = 'dark';
+try {
+  theme = localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark';
+} catch {}
+
+function applyTheme(next) {
+  theme = next;
+  document.documentElement.dataset.theme = theme;
+  document.querySelector('meta[name="theme-color"]').setAttribute('content', THEME_COLORS[theme].bar);
+  const other = theme === 'dark' ? tiles.light : tiles.dark;
+  if (map.hasLayer(other)) map.removeLayer(other);
+  if (!map.hasLayer(tiles[theme])) tiles[theme].addTo(map);
+  try {
+    localStorage.setItem(THEME_KEY, theme);
+  } catch {}
+  if (app.nav) {
+    drawRoute();
+    if (app.fix) onFix(app.fix);
+  }
+}
+const toggleTheme = () => applyTheme(theme === 'dark' ? 'light' : 'dark');
+
 /* ---------- État ---------- */
 
 const app = {
@@ -104,9 +137,63 @@ const app = {
   routeData: null, // fichier de la ligne
   nav: null, // { variant, route, engine, follow, avgKmh, last }
 };
+applyTheme(theme);
 const locator = new Locator({ onFix: onFix, onStatus: setGate });
 const speedLimit = new SpeedLimit();
 const keepAwake = new KeepAwake();
+
+/* ---------- Cookie technique : reprise de la navigation (3 h) ---------- */
+
+const SESSION_COOKIE = 'navlb_session';
+const SESSION_TTL_S = 3 * 3600;
+let lastSessionSave = 0;
+
+function writeCookie(value, maxAge) {
+  const secure = location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${SESSION_COOKIE}=${value}; max-age=${maxAge}; path=/; SameSite=Lax${secure}`;
+}
+function saveSession() {
+  if (!app.nav || !app.line) return;
+  const v = { f: app.line.file, o: app.nav.variant.origin, d: app.nav.variant.destination };
+  writeCookie(encodeURIComponent(JSON.stringify(v)), SESSION_TTL_S);
+  lastSessionSave = Date.now();
+}
+function clearSession() {
+  writeCookie('', 0);
+}
+function readSession() {
+  const m = document.cookie.split('; ').find((c) => c.startsWith(SESSION_COOKIE + '='));
+  if (!m) return null;
+  try {
+    return JSON.parse(decodeURIComponent(m.slice(SESSION_COOKIE.length + 1)));
+  } catch {
+    return null;
+  }
+}
+
+async function resumeSession() {
+  const s = readSession();
+  if (!s || !app.index || app.nav) return;
+  const entry = app.index.lines.find((l) => l.file === s.f);
+  if (!entry) return clearSession();
+  try {
+    const res = await fetch(`data/routes/${entry.file}.json`);
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    const direct = data.variants.find((v) => v.origin === s.o && v.destination === s.d);
+    const inverse = data.variants.find((v) => v.origin === s.d && v.destination === s.o);
+    const variant =
+      direct ??
+      (inverse && { origin: s.o, destination: s.d, sens: '', key: 'inv', coords: inverse.coords.slice().reverse() });
+    if (!variant) return clearSession();
+    app.line = entry;
+    app.routeData = data;
+    startNav(variant);
+    toast('Navigation reprise');
+  } catch {
+    // hors ligne ou données absentes : on garde le cookie, l'utilisateur peut réessayer
+  }
+}
 
 /* ---------- Localisation obligatoire ---------- */
 
@@ -150,6 +237,7 @@ async function loadIndex() {
     if (!app.index.lines?.length) throw new Error('vide');
     status.textContent = `${app.index.lines.length} lignes`;
     renderLines();
+    resumeSession();
   } catch {
     status.textContent = 'Données des lignes introuvables. Générez-les avec « npm run data » (voir README).';
   }
@@ -270,20 +358,23 @@ function startNav(variant) {
     if (!ok) toast('Écran : impossible de le garder allumé sur ce navigateur');
   });
   map.setZoom(Math.max(map.getZoom(), 16), { animate: false });
+  saveSession();
   if (app.fix) onFix(app.fix);
 }
 
 function drawRoute() {
   routeLayers.clearLayers();
   const { route } = app.nav;
-  const halo = L.polyline(route.coords, { color: '#000', weight: 12, opacity: 0.85, lineCap: 'round', lineJoin: 'round' }).addTo(routeLayers);
-  const done = L.polyline([], { color: '#5a1115', weight: 7, lineCap: 'round', lineJoin: 'round' }).addTo(routeLayers);
+  const tc = THEME_COLORS[theme];
+  const halo = L.polyline(route.coords, { color: tc.halo, weight: 12, opacity: 0.85, lineCap: 'round', lineJoin: 'round' }).addTo(routeLayers);
+  const done = L.polyline([], { color: tc.done, weight: 7, lineCap: 'round', lineJoin: 'round' }).addTo(routeLayers);
   const todo = L.polyline(route.coords, { color: '#e30613', weight: 7, lineCap: 'round', lineJoin: 'round' }).addTo(routeLayers);
   const end = L.circleMarker(route.coords.at(-1), { radius: 9, color: '#fff', weight: 3, fillColor: '#e30613', fillOpacity: 1 }).addTo(routeLayers);
   app.nav.layers = { halo, done, todo, end };
 }
 
 async function endNav() {
+  clearSession();
   app.nav = null;
   routeLayers.clearLayers();
   await keepAwake.disable();
@@ -306,6 +397,7 @@ async function turnAround() {
   $('nav-dest').textContent = opposite.destination;
   $('arrived-banner').hidden = true;
   drawRoute();
+  saveSession();
   if (app.fix) onFix(app.fix);
 }
 
@@ -321,6 +413,7 @@ function onFix(fix) {
   }
 
   const n = app.nav;
+  if (Date.now() - lastSessionSave > 60000) saveSession(); // prolonge le cookie de 3 h
   const s = n.engine.update(fix);
   const moving = fix.speedKmh !== null && fix.speedKmh > 3;
   const heading = moving && fix.heading !== null ? fix.heading : s.state === 'off' ? meHeading : s.heading;
@@ -374,6 +467,8 @@ $('btn-recenter').addEventListener('click', () => {
 });
 $('btn-turn').addEventListener('click', () => app.nav && turnAround());
 $('btn-end').addEventListener('click', () => app.nav && endNav());
+$('btn-theme').addEventListener('click', toggleTheme);
+$('btn-theme-nav').addEventListener('click', toggleTheme);
 
 /* ---------- Installation (raccourci écran d’accueil) ---------- */
 

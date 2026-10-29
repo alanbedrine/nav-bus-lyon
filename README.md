@@ -13,13 +13,13 @@ Navigation « suivi de ligne » pour les bus TCL (Lyon), en PWA mobile. Rouge et
 - **Reprise** : un cookie technique de 3 h (`navlb_session`, ligne + sens, prolongé pendant la navigation, effacé à « Terminer ») relance la navigation si l'on ferme puis rouvre l'appli.
 - **Thème clair / sombre** (boutons dans l'accueil et en navigation, mémorisé), fond de carte assorti.
 - **Mobiles et tablettes uniquement** : sur PC, une page explicative remplace l'appli (`js/guard.js`, agent utilisateur + taille d'écran).
-- **France uniquement, aucun robot, aucun référencement** : voir « Protection » ci-dessous.
+- **Aucun robot, aucun référencement** (`.htaccess`, `robots.txt`, `noindex`).
 
 ## Démarrage
 
 ```bash
 npm install            # uniquement pour Leaflet (déjà copié dans vendor/)
-npm run data           # télécharge les lignes TCL -> data/index.json + data/routes/*.json
+npm run data           # (facultatif) met à jour data/ depuis data.gouv.fr
 npm test               # tests du moteur de navigation et de la normalisation
 npm run serve          # http://localhost:8080
 ```
@@ -27,44 +27,21 @@ npm run serve          # http://localhost:8080
 L'appli est 100 % statique (aucun build). La géolocalisation exige **HTTPS** (ou `localhost`) :
 déployez le dossier sur Cloudflare Pages, Netlify, Vercel, etc. (GitHub Pages sur dépôt privé demande un compte payant).
 
-## Hébergement et protection (France uniquement, anti-bots, non référencé)
+## Hébergement (Apache mutualisé, ex. Infomaniak)
 
-L'appli est statique ; la protection dépend de l'hébergeur.
+Aucun npm, aucun PHP : **envoyez simplement les fichiers par FTP/SFTP à la racine du site** (le dossier `data/` contient déjà les lignes et les arrêts) :
+`.htaccess`, `robots.txt`, `index.html`, `sw.js`, `manifest.webmanifest`, `css/`, `js/`, `vendor/`, `icons/`, `data/`.
+Les dossiers `scripts/`, `tests/`, `node_modules/`, `.git`, `.github` et les fichiers `package*.json`, `README.md` n'ont pas besoin d'être envoyés (et sont de toute façon refusés par `.htaccess`).
 
-### Option A — hébergement mutualisé Apache + PHP 8.1 ou plus (Infomaniak…)
+Activez le **HTTPS** (certificat gratuit chez l'hébergeur) : la géolocalisation ne fonctionne pas sans.
 
-`.htaccess` envoie **toutes** les requêtes à `gate.php`, qui :
-1. refuse (403) les robots (agent utilisateur de robot ou vide) ;
-2. refuse (403) les adresses IP qui ne sont pas dans les plages **françaises** (`geo/fr-ranges.php`, tiré du registre public RIPE NCC) ;
-3. sert ensuite le fichier demandé (seuls `index.html`, `sw.js`, `manifest.webmanifest`, `robots.txt`, `css/ js/ vendor/ icons/ data/` sont accessibles ; `geo/`, `*.php`, `scripts/`, `tests/`… ne le sont jamais), avec `X-Robots-Tag: noindex` et cache `ETag`/`304`.
+Protection (`.htaccess` + `robots.txt`) :
+- les robots et outils automatiques (agent utilisateur vide ou connu : moteurs de recherche, IA, outils de téléchargement) reçoivent un 403 ;
+- `robots.txt` interdit tout, robots d'IA compris ; `index.html` porte `noindex, nofollow` et chaque réponse `X-Robots-Tag: noindex…` ;
+- en-têtes de sécurité (`nosniff`, `no-referrer`, géolocalisation limitée au site).
 
-`robots.txt` reste lisible directement (interdit tout, robots d'IA compris) et `index.html` porte `noindex, nofollow`.
-
-Mise en place :
-
-```bash
-npm run geo            # génère geo/fr-ranges.php (téléchargement RIPE NCC) — à relancer de temps en temps
-npm run data           # génère data/ (lignes + arrêts)
-```
-
-Puis envoyez par FTP/SFTP à la racine du site : `.htaccess`, `gate.php`, `geo-test.php`, `robots.txt`, `index.html`, `sw.js`, `manifest.webmanifest`, `css/`, `js/`, `vendor/`, `icons/`, `data/`, `geo/`.
-
-1. Ouvrez `https://votre-site/geo-test.php` **depuis votre téléphone en 4G/5G** : il affiche l'adresse IP vue par le serveur et « Reconnue en France : OUI ». Si l'IP affichée est celle d'un relais de l'hébergeur et non la vôtre, passez `trust_forwarded_for` à `true` dans `geo/config.php`.
-2. **Supprimez `geo-test.php`** une fois le test fait.
-3. Mettez en HTTPS (certificat Let's Encrypt gratuit chez l'hébergeur) : la géolocalisation l'exige.
-
-Réglages dans `geo/config.php` : `allow_ips` (adresses toujours autorisées, par exemple pour tester depuis l'étranger).
-Sans `geo/fr-ranges.php`, le site répond 503 (il ne s'ouvre jamais « par défaut »).
-
-### Option B — Cloudflare Pages
-
-`functions/_middleware.js` fait le même travail avec le pays fourni par Cloudflare (`ALLOW_ALL=1` pour le développement). `_headers` pose les en-têtes.
-
-### Limites
-
-- Le filtre par plages d'adresses suit le pays d'enregistrement des adresses : un visiteur en France via un VPN étranger est refusé, un VPN français contourne le filtre.
-- `robots.txt` n'est respecté que par les robots honnêtes (d'où le blocage par agent utilisateur) ; ne partagez pas l'adresse publiquement.
-- Le service worker garde l'appli en cache sur l'appareil : elle reste ouverte hors ligne, même si l'on part à l'étranger.
+Limites : `robots.txt` n'est respecté que par les robots honnêtes, et un robot qui se fait passer pour un navigateur n'est pas détecté ; ne partagez pas l'adresse publiquement.
+Il n'y a **pas de restriction par pays**.
 
 ## Données
 
@@ -72,8 +49,10 @@ Deux jeux publics (sans compte) de data.gouv.fr, tous deux du SYTRAL / TCL :
 [tracés des lignes de bus](https://www.data.gouv.fr/datasets/lignes-de-bus-du-reseau-transports-en-commun-lyonnais) et
 [points d'arrêt](https://www.data.gouv.fr/datasets/points-darret-du-reseau-transports-en-commun-lyonnais).
 
+Les données sont **déjà générées** dans `data/` (état au 29/10/2026). Pour les mettre à jour (facultatif, nécessite Node.js) :
+
 ```bash
-npm run data                                   # télécharge les deux jeux
+npm run data                                            # télécharge les deux jeux
 npm run data -- --lines=lignes.zip --stops=arrets.zip   # ou depuis des fichiers locaux (shapefile .zip ou GeoJSON)
 ```
 
@@ -81,10 +60,10 @@ npm run data -- --lines=lignes.zip --stops=arrets.zip   # ou depuis des fichiers
 chaîne les morceaux de géométrie, simplifie à 2 m, rattache à chaque tracé les arrêts de la ligne situés à moins de 30 m (dans l'ordre du tracé, bon sens A/R)
 et écrit un fichier par ligne (`data/routes/`) plus `data/index.json`. Les couleurs viennent du champ `couleur_he`.
 
-Contenu au 29/10/2026 : 789 lignes, dont 591 scolaires (JD), 1 775 tracés. Les lignes JD n'ont pas de terminus renseigné :
+Contenu : 789 lignes, dont 591 scolaires (JD), 1 775 tracés. Les lignes JD n'ont pas de terminus renseigné :
 ils sont déduits du nom du tracé (« 345101 ST-APPOLINAIRE>AMPLEPUIS »). Les lignes « BR… » sont les bus relais (métro, tram, funiculaire en panne).
 
-Le workflow `.github/workflows/update-data.yml` régénère et commit les données chaque mois (ou à la demande).
+Le workflow `.github/workflows/update-data.yml` régénère et commit les données chaque mois (ou à la demande), sans rien exécuter chez vous.
 
 ## Fonctionnement de la navigation
 

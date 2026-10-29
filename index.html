@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-  <title>nav-tcl</title>
+  <title>nav Lyon bus</title>
   <meta name="description" content="Navigation en suivi de ligne pour les bus TCL (Lyon)">
   <meta name="theme-color" content="#0b0b0c">
   <link rel="manifest" href="manifest.webmanifest">
@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="nav-tcl">
+  <meta name="apple-mobile-web-app-title" content="nav Lyon bus">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="css/app.css">
@@ -23,7 +23,7 @@
   <section id="home" class="sheet" aria-label="Lignes">
     <div class="grabber" aria-hidden="true"></div>
     <header class="brand">
-      <span class="logo"><b>nav</b><i>tcl</i></span>
+      <span class="logo"><b>nav</b><i>Lyon bus</i></span>
       <button id="btn-install" class="chip" hidden>Ajouter à l’écran d’accueil</button>
     </header>
     <label class="search">
@@ -87,7 +87,7 @@
     <div class="gate-card">
       <div class="pin"><svg viewBox="0 0 24 24"><path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12Z"/><circle cx="12" cy="10" r="2.5"/></svg></div>
       <h2 id="gate-title">Localisation requise</h2>
-      <p id="gate-text">nav-tcl a besoin de votre position pour suivre la ligne.</p>
+      <p id="gate-text">nav Lyon bus a besoin de votre position pour suivre la ligne.</p>
       <p id="gate-help" class="muted" hidden></p>
       <button id="btn-retry" class="btn primary" hidden>Redemander la localisation</button>
     </div>
@@ -104,6 +104,14 @@
       </div>
     </div>
   </section>
+
+  <!-- Bandeau d'information (type cookies) -->
+  <aside id="info" class="info" role="dialog" aria-labelledby="info-title" hidden>
+    <h2 id="info-title">Bienvenue sur nav Lyon bus</h2>
+    <p>Application <strong>gratuite</strong> et <strong>non officielle</strong>, sans lien avec les TCL ni SYTRAL Mobilités. Elle est développée par des conducteurs, pour des conducteurs.</p>
+    <p class="muted">Aucun compte, aucun cookie de suivi. Votre position sert uniquement à la navigation et n'est pas enregistrée.</p>
+    <button id="info-ok" class="btn primary">J'ai compris</button>
+  </aside>
 
   <div id="toast" role="status" hidden></div>
 

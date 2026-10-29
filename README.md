@@ -1,4 +1,4 @@
-# nav-tcl
+# nav Lyon bus
 
 Navigation « suivi de ligne » pour les bus TCL (Lyon), en PWA mobile. Rouge et noir.
 

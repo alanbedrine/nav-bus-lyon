@@ -1,6 +1,6 @@
 {
-  "name": "nav-tcl",
-  "short_name": "nav-tcl",
+  "name": "nav Lyon bus",
+  "short_name": "nav Lyon bus",
   "description": "Navigation en suivi de ligne pour les bus TCL (Lyon)",
   "lang": "fr",
   "start_url": "./",

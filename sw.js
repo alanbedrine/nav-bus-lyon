@@ -1,5 +1,5 @@
-// Service worker nav-tcl : coquille de l'appli hors ligne, données lignes et tuiles en cache.
-const VERSION = 'nav-tcl-v1';
+// Service worker nav Lyon bus : coquille de l'appli hors ligne, données lignes et tuiles en cache.
+const VERSION = 'nav-lyon-bus-v2';
 const SHELL = [
   './',
   'index.html',
@@ -14,8 +14,8 @@ const SHELL = [
   'icons/icon-192.png',
   'icons/icon-512.png',
 ];
-const DATA = 'nav-tcl-data-v1';
-const TILES = 'nav-tcl-tiles-v1';
+const DATA = 'nav-lyon-bus-data-v1';
+const TILES = 'nav-lyon-bus-tiles-v1';
 const MAX_TILES = 600;
 
 self.addEventListener('install', (e) => {

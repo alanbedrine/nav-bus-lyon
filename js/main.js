@@ -114,12 +114,12 @@ const GATE = {
   pending: ['Autorisez la localisation', 'Acceptez la demande de votre navigateur pour continuer.', null, false],
   denied: [
     'Localisation refusée',
-    'Sans votre position, nav-tcl ne fonctionnera pas : impossible de suivre la ligne ni de savoir si vous êtes délocalisé.',
+    'Sans votre position, nav Lyon bus ne fonctionnera pas : impossible de suivre la ligne ni de savoir si vous êtes délocalisé.',
     'Autorisez la localisation pour ce site dans les réglages du navigateur, puis appuyez sur le bouton.',
     true,
   ],
   unavailable: ['Position indisponible', 'Le signal GPS est introuvable pour le moment. Vérifiez que la localisation est activée.', null, true],
-  insecure: ['Connexion non sécurisée', 'La localisation n’est disponible qu’en HTTPS. Ouvrez nav-tcl via une adresse https://.', null, true],
+  insecure: ['Connexion non sécurisée', 'La localisation n’est disponible qu’en HTTPS. Ouvrez nav Lyon bus via une adresse https://.', null, true],
   unsupported: ['Navigateur non compatible', 'Ce navigateur ne gère pas la géolocalisation.', null, false],
 };
 
@@ -388,7 +388,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
 });
 window.addEventListener('appinstalled', () => {
   $('btn-install').hidden = true;
-  toast('nav-tcl ajouté à l’écran d’accueil');
+  toast('nav Lyon bus ajouté à l’écran d’accueil');
 });
 if (isIOS && !standalone) $('btn-install').hidden = false;
 
@@ -406,6 +406,17 @@ $('btn-install').addEventListener('click', async () => {
       cancel: null,
     });
   }
+});
+
+/* ---------- Bandeau d'information (disparaît après acceptation) ---------- */
+
+const INFO_KEY = 'nav-lyon-bus:info-ok';
+let infoSeen = false;
+try { infoSeen = localStorage.getItem(INFO_KEY) === '1'; } catch {}
+if (!infoSeen) $('info').hidden = false;
+$('info-ok').addEventListener('click', () => {
+  $('info').hidden = true;
+  try { localStorage.setItem(INFO_KEY, '1'); } catch {}
 });
 
 /* ---------- Démarrage ---------- */

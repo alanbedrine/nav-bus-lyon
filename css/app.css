@@ -291,4 +291,66 @@ a.btn.primary { color: #fff; }
 #demo-bar select option { color: #000; }
 #demo-bar strong { letter-spacing: .08em; }
 body.demo .topcard { top: calc(48px + var(--safe-t)); }
-body.demo #nav .banner, body.demo #fnav .banner { margin-top: 38px; }
+
+
+/* Bannières empilées sous le bandeau (ordre : réseau, état, alertes) */
+.alerts { position: absolute; left: 12px; right: 12px; top: calc(132px + var(--safe-t)); display: flex; flex-direction: column; gap: 8px; pointer-events: none; z-index: 2; }
+.alerts .banner, #fnav .alerts .banner { position: static; left: auto; right: auto; top: auto; margin: 0; pointer-events: auto; }
+body.demo .alerts { top: calc(170px + var(--safe-t)); }
+.banner.grey { background: #55555e; color: #fff; box-shadow: none; animation: none; }
+.banner.orange { background: #e8780a; color: #fff; box-shadow: 0 8px 24px rgba(232,120,10,.4); animation: none; }
+.banner.orange.stop, .banner.red { background: var(--red); animation: pulse 1.2s ease-in-out infinite; }
+.banner > div { flex: 1; min-width: 0; }
+.count-time { font-size: 28px; font-variant-numeric: tabular-nums; letter-spacing: -.5px; }
+#fnav .banner.dt-banner { background: #e8780a; }
+#fnav .banner.dt-banner.stop { background: var(--red); }
+body.demo .topcard { top: calc(48px + var(--safe-t)); }
+
+/* Flèche du véhicule (blanche en thème sombre, noire en thème clair) */
+:root { --me-fill: #fff; --me-stroke: #0b0b0c; --me-glow: rgba(255,255,255,.28); }
+:root[data-theme="light"] { --me-fill: #111114; --me-stroke: #fff; --me-glow: rgba(0,0,0,.2); }
+.me { width: 72px; height: 72px; }
+.me svg { width: 72px; height: 72px; filter: drop-shadow(0 3px 5px rgba(0,0,0,.55)); }
+
+/* Pictogrammes de manœuvre */
+.fn-icon { width: 64px; height: 64px; border-radius: 18px; background: #1f6fe0; color: #fff; display: grid; place-items: center; flex: none; }
+.fn-icon svg { width: 48px; height: 48px; fill: none; stroke: none; }
+.fn-icon svg text { stroke: none; }
+.fn-top small#fn-dist { font-size: 26px; }
+#fn-voice svg { width: 24px; height: 24px; }
+#fn-voice[aria-pressed="true"] .vx { display: none; }
+#fn-voice[aria-pressed="false"] .vw { display: none; }
+.fab.third { bottom: calc(236px + var(--safe-b)); }
+#fnav .fab.third { bottom: calc(236px + var(--safe-b)); }
+.steps { list-style: none; margin: 8px 0 0; padding: 0; overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch; }
+.steps li { display: flex; gap: 12px; align-items: center; padding: 10px 4px; border-bottom: 1px solid var(--line); }
+.steps .ico { width: 44px; height: 44px; border-radius: 12px; background: #1f6fe0; color: #fff; display: grid; place-items: center; flex: none; }
+.steps .ico svg { width: 34px; height: 34px; }
+.steps .txt { flex: 1; min-width: 0; }
+.steps .txt strong { display: block; font-size: 15px; line-height: 1.25; }
+.steps .txt small { color: var(--muted); font-size: 13px; display: block; }
+.steps .d { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 14px; flex: none; }
+.steps li.passed { opacity: .45; }
+.steps li.next { background: color-mix(in srgb, #1f6fe0 14%, transparent); border-radius: 12px; }
+#trip { z-index: 700; }
+
+/* Étiquettes d'arrêts sur la carte */
+.leaflet-tooltip.stop-label { background: rgba(20,20,26,.88); color: #fff; border: 0; border-radius: 8px; padding: 2px 7px; font: 600 11px system-ui, sans-serif; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.leaflet-tooltip.stop-label::before { display: none; }
+.leaflet-tooltip.stop-label.next { font-size: 13px; background: var(--red, #e30613); }
+:root[data-theme="light"] .leaflet-tooltip.stop-label:not(.next) { background: rgba(255,255,255,.94); color: #111; }
+/* Compte à rebours RSE */
+.banner.orange { background: #d97a00; color: #fff; }
+.banner.orange.stop { background: #d00; animation: pulse 1.2s ease-in-out infinite; }
+.count-time { font: 800 26px ui-monospace, monospace; margin-left: auto; font-variant-numeric: tabular-nums; }
+#fn-dt.warn { background: #d97a00; color: #fff; }
+#fn-dt.stop { background: #d00; color: #fff; }
+
+/* Bandeau de suivi aux couleurs de la ligne */
+#nav .topcard { background: var(--tc, #1c1c22); color: var(--tc-ink, #fff); border-color: rgba(255,255,255,.25); }
+#nav .topcard small, #nav .topcard .next { color: var(--tc-ink, #fff); opacity: .85; }
+#nav .topcard .badge { background: var(--tc-ink, #fff) !important; color: var(--tc, #111) !important; box-shadow: none !important; }
+#nav .topcard .progress { background: rgba(255,255,255,.28); }
+#nav .topcard .progress i { background: var(--tc-ink, #fff); }
+#nav-eta { display: none; }
+#nav.at-stop #nav-stop { font-size: 30px; line-height: 1.1; white-space: normal; }

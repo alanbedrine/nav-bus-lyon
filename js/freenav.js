@@ -7,6 +7,8 @@ import {
   vehicleTitle, vehicleSubtitle, maneuverGlyph,
 } from './routing.js';
 import { Route, NavEngine } from './nav.js';
+import { maneuverSvg } from './icons.js';
+import { Voice, spokenDistance } from './voice.js';
 
 export const DRIVE_WARNING =
   '⚠ Ne manipulez pas votre téléphone en conduisant. Fixez-le sur un support, saisissez ou modifiez tout à l’arrêt, et gardez les yeux sur la route.\nVous restez seul responsable de la conduite et du respect du code de la route.';
@@ -36,6 +38,7 @@ function save(key, value) {
 export function initFree(ctx) {
   const { map, ask, toast, keepAwake, speedLimit, setMe, camera, app, fmtDist, fmtTime, getTheme, demo = null, net = {} } = ctx;
   const layers = L.layerGroup().addTo(map);
+  const voice = new Voice();
 
   const state = {
     active: false,
@@ -300,6 +303,7 @@ export function initFree(ctx) {
     });
     camera.start('follow');
     demo?.follow(state.plan.coords);
+    state.nav.said = {};
     refreshDriveUi(true);
     if (app.fix) onFix(app.fix);
   }
@@ -345,20 +349,29 @@ export function initFree(ctx) {
     n.layers.done.setLatLngs(done);
     n.layers.todo.setLatLngs(todo);
 
-    // Prochaine manœuvre
+    // Prochaine manœuvre : pictogramme (rond-point, sortie, virage…), distance, rue ou panneau de sortie
     const arrived = s.state === 'arrived';
     const m = arrived ? null : currentManeuver(n, s.along);
+    let turnDist = null;
     if (arrived || !m) {
-      $('fn-icon').textContent = '⚑';
+      $('fn-icon').innerHTML = maneuverSvg(4);
       $('fn-dist').textContent = 'Arrivée';
       $('fn-text').textContent = arrived ? 'Vous êtes arrivé' : 'Destination';
       $('fn-street').textContent = state.dest?.label ?? '';
+      if (arrived && !n.saidArrival) {
+        n.saidArrival = true;
+        voice.say('Vous êtes arrivé à destination.', { urgent: true });
+      }
     } else {
-      $('fn-icon').textContent = maneuverGlyph(m.type);
-      $('fn-dist').textContent = m.begin === 0 && s.along < 40 ? 'Départ' : fmtDist(Math.max(0, m.at - s.along));
+      const dist = Math.max(0, m.at - s.along);
+      turnDist = m.type === 1 || m.type === 2 || m.type === 3 ? null : dist;
+      $('fn-icon').innerHTML = maneuverSvg(m.type, m.exitCount);
+      $('fn-dist').textContent = m.begin === 0 && s.along < 40 ? 'Départ' : fmtDist(dist);
       $('fn-text').textContent = m.text;
-      $('fn-street').textContent = m.street;
+      $('fn-street').textContent = m.sign || m.street;
+      speak(n, m, dist, fix.speedKmh ?? 0);
     }
+    if (n.tripOpen) updateTrip(true);
     $('fn-remaining').textContent = fmtDist(s.remaining);
     if (fix.speedKmh > 5) n.avgKmh = n.avgKmh * 0.9 + fix.speedKmh * 0.1;
     $('fn-eta').textContent = arrived ? 'Arrivé' : `Arrivée ${fmtTime(new Date(Date.now() + (s.remaining / 1000 / Math.max(n.avgKmh, 15)) * 3600000))}`;
@@ -390,14 +403,104 @@ export function initFree(ctx) {
       }
     });
 
-    camera.update(L.latLng(pos), s.state === 'off' ? fix.heading : s.heading, fix.speedKmh);
+    camera.update(L.latLng(pos), s.state === 'off' ? fix.heading : s.heading, fix.speedKmh, false, turnDist);
     setMe(pos[0], pos[1], heading ?? null);
   }
+
+  /** Annonces vocales : anticipée (plus tôt à grande vitesse), rappel, puis à l'approche. */
+  function speak(n, m, dist, kmh) {
+    const key = m.begin;
+    const said = (n.said ??= {});
+    const st = (said[key] ??= {});
+    if (m.type === 1 || m.type === 2 || m.type === 3) {
+      if (!st.start) {
+        st.start = true;
+        voice.say(m.verbal || m.text);
+      }
+      return;
+    }
+    const fast = kmh >= 70;
+    const idx = n.mans.indexOf(m);
+    const prevLen = idx > 0 ? n.mans[idx - 1].length : 99999;
+    const text = m.verbal || m.text;
+    const steps = [
+      ['far', fast ? 1500 : 800, true],
+      ['mid', fast ? 500 : 300, true],
+      ['near', fast ? 150 : 80, false],
+    ];
+    for (const [id, at, withDist] of steps) {
+      if (st[id] || dist > at) continue;
+      // un palier déjà dépassé de loin (segment court) est ignoré, sauf le dernier
+      st[id] = true;
+      const skip = withDist && prevLen < at + 80;
+      if (skip) continue;
+      voice.say(withDist ? `${spokenDistance(dist)}, ${text}` : text, { urgent: id === 'near' });
+      break;
+    }
+  }
+
+  /* ---------- Détail du trajet (comme « Ligne » en navigation TCL) ---------- */
+
+  function updateTrip(light = false) {
+    const n = state.nav;
+    if (!n) return;
+    const along = n.engine.along ?? 0;
+    const nextIdx = n.mans.findIndex((m) => m.at >= along - 8 && !(m.begin === 0));
+    const key = `${nextIdx}|${n.mans.length}`;
+    $('trip-sub').textContent = `${fmtDist(Math.max(0, n.route.length - along))} · ${state.dest?.label ?? ''}`;
+    if (light && n.tripKey === key) {
+      n.mans.forEach((m, i) => {
+        const d = document.querySelector(`#trip-list li[data-i="${i}"] .d`);
+        if (d && i >= nextIdx && nextIdx !== -1) d.textContent = fmtDist(Math.max(0, m.at - along));
+      });
+      return;
+    }
+    n.tripKey = key;
+    const items = n.mans.map((m, i) => {
+      const li = document.createElement('li');
+      li.dataset.i = String(i);
+      if (nextIdx !== -1 && i < nextIdx) li.className = 'passed';
+      else if (i === nextIdx) li.className = 'next';
+      li.innerHTML = '<span class="ico"></span><span class="txt"><strong></strong><small></small></span><span class="d"></span>';
+      li.querySelector('.ico').innerHTML = maneuverSvg(m.type, m.exitCount);
+      li.querySelector('strong').textContent = m.text;
+      li.querySelector('small').textContent = [m.sign, m.street].filter(Boolean).join(' · ');
+      li.querySelector('.d').textContent = i >= nextIdx && nextIdx !== -1 ? fmtDist(Math.max(0, m.at - along)) : '';
+      return li;
+    });
+    $('trip-list').replaceChildren(...items);
+    $('trip-list').querySelector('li.next')?.scrollIntoView({ block: 'start' });
+  }
+  $('fn-trip').addEventListener('click', () => {
+    if (!state.nav) return;
+    state.nav.tripOpen = true;
+    state.nav.tripKey = '';
+    $('trip').hidden = false;
+    $('trip-title').textContent = 'Trajet';
+    updateTrip();
+  });
+  $('trip-back').addEventListener('click', () => {
+    $('trip').hidden = true;
+    if (state.nav) state.nav.tripOpen = false;
+  });
+
+  // Guidage vocal : bouton marche / arrêt
+  const syncVoice = () => {
+    $('fn-voice').setAttribute('aria-pressed', String(voice.enabled));
+    $('fn-voice').hidden = !voice.supported;
+  };
+  $('fn-voice').addEventListener('click', () => {
+    voice.set(!voice.enabled);
+    syncVoice();
+    if (voice.enabled) voice.say('Guidage vocal activé', { urgent: true });
+  });
+  syncVoice();
 
   async function reroute(fix) {
     const n = state.nav;
     n.rerouting = true;
     n.lastTry = Date.now();
+    voice.say('Recalcul de l’itinéraire', { urgent: true });
     $('fn-banner-title').textContent = 'Recalcul de l’itinéraire…';
     try {
       const plan = await fetchRoute({ lat: fix.lat, lon: fix.lon }, state.dest, state.vehicle, { fetchImpl: net.fetch });
@@ -454,23 +557,33 @@ export function initFree(ctx) {
     for (const a of snap.alerts) {
       if (announced.has(a.id)) continue;
       announced.add(a.id);
-      announce(a);
+      announce(a, snap);
     }
     refreshDriveUi(false, snap);
   }
 
-  function announce(a) {
+  const mmss = (ms) => {
+    const s = Math.floor(Math.abs(ms) / 1000);
+    const h = Math.floor(s / 3600);
+    const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+    const x = String(s % 60).padStart(2, '0');
+    return h ? `${h}:${m}:${x}` : `${m}:${x}`;
+  };
+  const SOON = 30 * 60000; // compte à rebours orange à partir de 30 min
+
+  function announce(a, snap) {
     try {
       navigator.vibrate?.(a.level === 'stop' ? [400, 150, 400, 150, 400] : [250, 100, 250]);
     } catch {}
-    if (state.active) {
+    voice.say(a.text, { urgent: a.level === 'stop' });
+    const covered = snap?.limit && snap.limit.left <= SOON; // le compte à rebours montre déjà l'alerte
+    if (!state.active) toast(a.text, 8000);
+    else if (!covered) {
       $('fn-alert').hidden = false;
       $('fn-alert').classList.toggle('stop', a.level === 'stop');
-      $('fn-alert-title').textContent = a.level === 'stop' ? 'Pause / limite atteinte' : 'Temps de conduite';
+      $('fn-alert-title').textContent = 'Temps de conduite';
       $('fn-alert-text').textContent = a.text;
-      bannerUntil = a.level === 'stop' ? Infinity : Date.now() + 15000;
-    } else {
-      toast(a.text, 8000);
+      bannerUntil = Date.now() + 15000;
     }
   }
 
@@ -479,7 +592,7 @@ export function initFree(ctx) {
     if (state.active) {
       const pill = $('fn-dt');
       pill.classList.remove('warn', 'stop', 'pause');
-      const top = snap.alerts.reduce((m, a) => Math.max(m, LEVEL_RANK[a.level]), -1);
+      const left = snap.service ? snap.limit.left : Infinity;
       if (!snap.service) {
         $('fn-dt-label').textContent = 'Temps de conduite';
         $('fn-dt-val').textContent = 'Service fermé';
@@ -488,15 +601,25 @@ export function initFree(ctx) {
         $('fn-dt-label').textContent = snap.manual ? 'Pause conduite' : 'Pause détectée';
         $('fn-dt-val').textContent = `${fmtDuration(snap.breakElapsed)}${snap.breakDone ? ' ✓' : ` / ${fmtDuration(snap.breakNeeded)}`}`;
       } else {
-        $('fn-dt-label').textContent = `Conduite continue · reste ${fmtDuration(snap.contLeft)}`;
+        $('fn-dt-label').textContent = left > 0 ? `Conduite continue · reste ${fmtDuration(snap.contLeft)}` : 'Limite dépassée';
         $('fn-dt-val').textContent = fmtDuration(snap.cont);
-        if (top >= 2) pill.classList.add('stop');
-        else if (top === 1) pill.classList.add('warn');
       }
+      if (snap.service && snap.mode !== 'pause') {
+        if (left <= 0) pill.classList.add('stop');
+        else if (left <= SOON) pill.classList.add('warn');
+      }
+      // Compte à rebours : orange avant la limite, rouge une fois dépassée
+      const cb = $('fn-count');
+      if (snap.service && left <= SOON) {
+        cb.hidden = false;
+        cb.classList.toggle('stop', left <= 0);
+        $('fn-count-title').textContent = left > 0 ? 'Limite de conduite dans' : 'Limite dépassée';
+        $('fn-count-text').textContent = left > 0 ? snap.limit.label : `${snap.limit.label} · arrêtez-vous dès que possible`;
+        $('fn-count-time').textContent = left > 0 ? mmss(left) : `+${mmss(left)}`;
+      } else cb.hidden = true;
       $('fn-pause').hidden = !snap.service;
       $('fn-pause').textContent = snap.manual ? 'Reprendre la conduite' : 'Pause conduite';
-      if (!$('fn-alert').hidden && Date.now() > bannerUntil && !snap.alerts.some((a) => a.level === 'stop')) $('fn-alert').hidden = true;
-      if (!snap.alerts.some((a) => a.level === 'stop') && bannerUntil === Infinity) bannerUntil = 0;
+      if (!$('fn-alert').hidden && Date.now() > bannerUntil) $('fn-alert').hidden = true;
     }
     if (!$('dt').hidden) renderDt(snap);
   }

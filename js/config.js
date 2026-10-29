@@ -1,9 +1,9 @@
 // Réglages de l'application et des services externes. Modifiez ce fichier pour changer de fournisseur.
-export const APP_VERSION = '0.3.0';
+export const APP_VERSION = '0.4.0';
 
 export const CONFIG = {
   // Dépôt GitHub public du projet (signalement de bugs, contributions). À remplacer par l'adresse réelle.
-  repoUrl: 'https://github.com/OWNER/nav-lyon-bus',
+  repoUrl: 'https://github.com/alanbedrine/nav-bus-lyon',
 
   // Fond de carte (tuiles raster). Par défaut : tuiles standard d'OpenStreetMap, sans clé.
   // Politique d'usage : https://operations.osmfoundation.org/policies/tiles/ (usage interactif raisonnable, pas de préchargement,

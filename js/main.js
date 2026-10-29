@@ -104,9 +104,10 @@ $('attrib').innerHTML = `${CONFIG.tileAttribution} · <a href="https://leafletjs
 
 const meIcon = L.divIcon({
   className: 'me',
-  iconSize: [44, 44],
-  iconAnchor: [22, 22],
-  html: '<svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="20" fill="#e30613" fill-opacity=".22"/><path d="M22 6 33 35 22 28.5 11 35Z" fill="#e30613" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/></svg>',
+  iconSize: [72, 72],
+  iconAnchor: [36, 36],
+  // Chevron arrondi façon Waze : blanc en thème sombre, noir en thème clair (variables CSS)
+  html: '<svg viewBox="0 0 72 72"><circle cx="36" cy="36" r="33" style="fill:var(--me-glow)"/><path d="M36 9c2.6 0 4.6 1.4 5.7 3.9l17 40.6c1.3 3.1-1.5 6.2-4.7 5.2L36 53.6l-18 5.1c-3.2 1-6-2.1-4.7-5.2l17-40.6C31.400 10.400 33.400 9 36 9Z" style="fill:var(--me-fill);stroke:var(--me-stroke);stroke-width:3.5;stroke-linejoin:round"/></svg>',
 });
 let meMarker = null;
 let meHeading = 0;
@@ -389,7 +390,7 @@ async function chooseDirection(variant) {
 
 function startNav(variant) {
   const route = new Route(variant.coords);
-  app.nav = { variant, route, engine: new NavEngine(route), avgKmh: 18, layers: null, stops: computeStops(variant, route), nextIdx: -2 };
+  app.nav = { variant, route, engine: new NavEngine(route), avgKmh: 18, layers: null, stops: computeStops(variant, route), nextIdx: -2, turns: route.turns() };
   previewLayer?.remove();
   previewLayer = null;
   drawRoute();
@@ -397,6 +398,14 @@ function startNav(variant) {
   $('home').hidden = true;
   $('nav').hidden = false;
   $('nav-badge').replaceWith(Object.assign(badge(app.line), { id: 'nav-badge' }));
+  {
+    const c = app.line?.color || '#e30613';
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16) || 0);
+    const light = (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.62;
+    const card = document.querySelector('#nav .topcard');
+    card.style.setProperty('--tc', c);
+    card.style.setProperty('--tc-ink', light ? '#111' : '#fff');
+  }
   $('nav-dest').textContent = destLabel(variant);
   keepAwake.enable().then((ok) => {
     if (!ok) toast('Écran : impossible de le garder allumé sur ce navigateur');
@@ -407,14 +416,41 @@ function startNav(variant) {
   if (app.fix) onFix(app.fix);
 }
 
-/** Arrêts de la variante, placés sur le tracé (abscisse curviligne) pour annoncer le prochain. */
+/** Arrêts de la variante, calés sur le tracé (point le plus proche) : abscisse curviligne + position affichée sur la ligne. */
 function computeStops(variant, route) {
   return (variant.stops ?? [])
     .map(([name, lat, lon, pmr]) => {
       const [x, y] = route.proj.toXY(lat, lon);
-      return { name, pmr, latlng: [lat, lon], along: route.nearest(x, y).along };
+      const hit = route.nearest(x, y);
+      return { name, pmr, latlng: route.pointAt(hit.along), along: hit.along, off: hit.dist };
     })
     .sort((a, b) => a.along - b.along);
+}
+
+/** Arrêt suivant plus gros avec son nom, arrêts passés estompés. */
+function styleStops(nextIdx) {
+  const n = app.nav;
+  if (!n?.stopMarkers || n.styledIdx === nextIdx) return;
+  n.styledIdx = nextIdx;
+  const last = n.stops.length;
+  const cut = nextIdx === -1 ? last : nextIdx;
+  n.stopMarkers.forEach(({ halo, dot, col }, i) => {
+    dot.unbindTooltip();
+    if (i < cut) {
+      halo.setStyle({ fillOpacity: 0 });
+      dot.setStyle({ radius: 5, color: theme === 'dark' ? '#6b6b75' : '#a9a9b3', weight: 3, fillColor: theme === 'dark' ? '#2a2a30' : '#e6e6ea' });
+      dot.bindTooltip(n.stops[i].name, { direction: 'top', offset: [0, -8], className: 'stop-label' });
+    } else if (i === nextIdx) {
+      halo.setStyle({ fillOpacity: 0.5, radius: 18 });
+      dot.setStyle({ radius: 11, color: '#fff', weight: 4, fillColor: col });
+      dot.bindTooltip(n.stops[i].name, { direction: 'top', offset: [0, -14], permanent: true, className: 'stop-label next' }).openTooltip();
+      dot.bringToFront();
+    } else {
+      halo.setStyle({ fillOpacity: theme === 'dark' ? 0.5 : 0.25, radius: 13 });
+      dot.setStyle({ radius: 8, color: col, weight: 4.5, fillColor: '#fff' });
+      dot.bindTooltip(n.stops[i].name, { direction: 'top', offset: [0, -10], className: 'stop-label' });
+    }
+  });
 }
 
 function drawRoute() {
@@ -425,17 +461,20 @@ function drawRoute() {
   const halo = L.polyline(route.coords, { color: tc.halo, weight: 12, opacity: 0.85, lineCap: 'round', lineJoin: 'round' }).addTo(routeLayers);
   const done = L.polyline([], { color: col, weight: 7, opacity: 0.3, lineCap: 'round', lineJoin: 'round' }).addTo(routeLayers);
   const todo = L.polyline(route.coords, { color: col, weight: 7, lineCap: 'round', lineJoin: 'round' }).addTo(routeLayers);
-  for (const st of app.nav.stops) {
-    L.circleMarker(st.latlng, { radius: 5, color: col, weight: 3, fillColor: theme === 'dark' ? '#0b0b0c' : '#fff', fillOpacity: 1 })
-      .bindTooltip(st.name, { direction: 'top', offset: [0, -4] })
-      .addTo(routeLayers);
-  }
+  app.nav.stopMarkers = app.nav.stops.map((st) => {
+    const halo = L.circleMarker(st.latlng, { radius: 13, stroke: false, fillColor: '#000', fillOpacity: theme === 'dark' ? 0.5 : 0.25, interactive: false }).addTo(routeLayers);
+    const dot = L.circleMarker(st.latlng, { radius: 8, color: col, weight: 4.5, fillColor: '#fff', fillOpacity: 1 }).addTo(routeLayers);
+    dot.bindTooltip(st.name, { direction: 'top', offset: [0, -10], className: 'stop-label' });
+    return { halo, dot, col };
+  });
+  app.nav.styledIdx = -2;
   const end = L.circleMarker(route.coords.at(-1), { radius: 9, color: '#fff', weight: 3, fillColor: col, fillOpacity: 1 }).addTo(routeLayers);
   app.nav.layers = { halo, done, todo, end };
 }
 
 async function endNav() {
   clearSession();
+  clearTimeout(app.nav?.autoTurnTimer);
   app.nav = null;
   routeLayers.clearLayers();
   camera.stop();
@@ -449,24 +488,31 @@ async function endNav() {
   if (app.fix) map.setView([app.fix.lat, app.fix.lon], 14);
 }
 
-async function turnAround() {
-  const { variant } = app.nav;
-  const opposite = oppositeVariant(variant, app.routeData.variants);
-  const ok = await ask({ title: 'Retournement', text: `Repartir vers ${destLabel(opposite)} ?`, ok: 'Retourner' });
-  if (!ok) return;
+async function turnAround(auto = false) {
+  const n0 = app.nav;
+  if (!n0) return;
+  clearTimeout(n0.autoTurnTimer);
+  const opposite = oppositeVariant(n0.variant, app.routeData.variants);
+  if (!auto) {
+    const ok = await ask({ title: 'Retournement', text: `Repartir vers ${destLabel(opposite)} ?`, ok: 'Retourner' });
+    if (!ok || app.nav !== n0) return;
+  }
   const route = new Route(opposite.coords);
-  Object.assign(app.nav, { variant: opposite, route, engine: new NavEngine(route), stops: computeStops(opposite, route), nextIdx: -2 });
+  Object.assign(app.nav, { variant: opposite, route, engine: new NavEngine(route), stops: computeStops(opposite, route), nextIdx: -2, turns: route.turns(), autoTurnTimer: null });
   $('nav-dest').textContent = destLabel(opposite);
   if (camera.mode === 'free') camera.recenter();
   $('arrived-banner').hidden = true;
   drawRoute();
   saveSession();
   if (DEMO) locator.follow(opposite.coords);
+  if (auto) toast(`Retournement automatique : vers ${destLabel(opposite)}`, 4500);
   if (app.fix) onFix(app.fix);
 }
 
+let lastFixAt = Date.now();
 function onFix(fix) {
   app.fix = fix;
+  lastFixAt = Date.now();
   if (!app.firstFix) {
     app.firstFix = true;
     if (!app.nav) map.setView([fix.lat, fix.lon], 14);
@@ -495,10 +541,9 @@ function onFix(fix) {
 
   // Bandeau : prochains arrêts en grand, terminus en petit
   if (fix.speedKmh > 5) n.avgKmh = n.avgKmh * 0.9 + fix.speedKmh * 0.1;
-  const eta = new Date(Date.now() + (s.remaining / 1000 / Math.max(n.avgKmh, 12)) * 3600 * 1000);
-  $('nav-eta').textContent = s.state === 'arrived' ? 'Arrivé' : `${fmtDist(s.remaining)} · ${fmtTime(eta)}`;
   $('nav-progress').style.width = `${Math.round(s.progress * 100)}%`;
   const upcoming = s.state === 'off' ? [] : n.stops.filter((st) => st.along > s.along + 15);
+  $('nav').classList.remove('at-stop');
   if (s.state === 'arrived') {
     $('nav-stop').textContent = 'Terminus';
     $('nav-stopdist').textContent = '';
@@ -510,7 +555,14 @@ function onFix(fix) {
   } else if (upcoming.length) {
     $('nav-stop').textContent = upcoming[0].name;
     $('nav-stopdist').textContent = fmtDist(upcoming[0].along - s.along);
-    $('nav-then').textContent = upcoming.length > 1 ? `Ensuite : ${upcoming.slice(1, 3).map((x) => x.name).join(' · ')}` : 'Dernier arrêt';
+    // À l'approche (≤ 60 m) ou juste après l'arrêt (≤ 40 m) : nom de l'arrêt en grand, sans « Ensuite »
+    const justPassed = n.stops.filter((st) => st.along <= s.along + 15 && st.along >= s.along - 40).pop();
+    const near = upcoming[0].along - s.along <= 60 || justPassed;
+    const focus = upcoming[0].along - s.along <= 60 ? upcoming[0] : justPassed || upcoming[0];
+    $('nav-stop').textContent = focus.name;
+    $('nav-stopdist').textContent = near ? '' : fmtDist(upcoming[0].along - s.along);
+    $('nav-then').textContent = near ? '' : upcoming.length > 1 ? `Ensuite : ${upcoming.slice(1, 3).map((x) => x.name).join(' · ')}` : 'Dernier arrêt';
+    $('nav').classList.toggle('at-stop', !!near);
   } else {
     $('nav-stop').textContent = n.stops.length ? 'Dernier arrêt passé' : 'Suivez la ligne';
     $('nav-stopdist').textContent = fmtDist(s.remaining);
@@ -518,12 +570,16 @@ function onFix(fix) {
   }
   n.along = s.along;
   n.state = s.state;
+  styleStops(s.state === 'off' ? n.styledIdx ?? -2 : n.stops.findIndex((st) => st.along > s.along + 15));
   updateProgress();
 
   const off = s.state === 'off';
   $('off-banner').hidden = !off;
   if (off) $('off-text').textContent = `À ${fmtDist(s.offDistance)} du tracé · rejoignez la ligne`;
   $('arrived-banner').hidden = s.state !== 'arrived';
+  if (s.state === 'arrived' && !n.autoTurnTimer) {
+    n.autoTurnTimer = setTimeout(() => app.nav === n && turnAround(true), 3500);
+  }
 
   // Vitesse + limite
   const kmh = fix.speedKmh === null ? 0 : Math.round(fix.speedKmh);
@@ -540,7 +596,8 @@ function onFix(fix) {
   });
 
   // Caméra : suivi (carte qui tourne), nord en haut, ou carte libre
-  camera.update(L.latLng(s.snapped), moving || s.state !== 'off' ? s.heading : fix.heading, fix.speedKmh);
+  const nextTurn = n.turns?.find((x) => x.along > s.along + 5);
+  camera.update(L.latLng(s.snapped), moving || s.state !== 'off' ? s.heading : fix.heading, fix.speedKmh, false, nextTurn ? nextTurn.along - s.along : null);
   setMe(s.snapped[0], s.snapped[1], heading);
 }
 
@@ -597,7 +654,7 @@ function updateProgress(scroll = false) {
 $('btn-stops').addEventListener('click', openProgress);
 $('pg-back').addEventListener('click', () => ($('progress').hidden = true));
 
-$('btn-turn').addEventListener('click', () => app.nav && turnAround());
+$('btn-turn').addEventListener('click', () => app.nav && turnAround(false));
 $('btn-end').addEventListener('click', () => app.nav && endNav());
 $('btn-theme').addEventListener('click', toggleTheme);
 $('btn-theme-nav').addEventListener('click', toggleTheme);
@@ -649,7 +706,7 @@ $('info-ok').addEventListener('click', () => {
 /* ---------- Feuilles déplaçables + À propos ---------- */
 
 for (const id of ['home', 'line', 'route-prev']) makeSheet($(id), { start: 'mid' });
-for (const id of ['progress', 'vehicle', 'dt', 'about']) makeSheet($(id), { start: 'full' });
+for (const id of ['progress', 'vehicle', 'dt', 'about', 'trip']) makeSheet($(id), { start: 'full' });
 
 $('ab-version').textContent = `v${APP_VERSION}`;
 const gh = CONFIG.repoUrl.replace(/\/$/, '');
@@ -665,6 +722,28 @@ $('ab-back').addEventListener('click', () => {
   $('about').hidden = true;
   $('home').hidden = false;
 });
+
+/* ---------- Alertes grises : perte de localisation ou de réseau ---------- */
+
+function watchConnectivity() {
+  const navigating = !!app.nav || !!free?.active;
+  const since = Math.round((Date.now() - lastFixAt) / 1000);
+  const gpsLost = navigating && !DEMO && (since > (app.fix?.stationary ? 60 : 20) || (app.fix && app.fix.accuracy > 120));
+  const netLost = navigating && !DEMO && navigator.onLine === false;
+  const title = gpsLost && netLost ? 'Position et réseau perdus' : gpsLost ? 'Position GPS perdue' : 'Réseau perdu';
+  const gpsTxt = since > 20 ? `Dernière position il y a ${since} s` : 'Signal GPS faible';
+  const detail = [gpsLost && gpsTxt, netLost && (free?.active ? 'recalcul d’itinéraire et carte indisponibles' : 'la navigation continue, la carte peut ne pas s’afficher')].filter(Boolean).join(' · ');
+  for (const [box, ti, tx] of [['net-banner', 'net-title', 'net-text'], ['fn-net', 'fn-net-title', 'fn-net-text']]) {
+    $(box).hidden = !(gpsLost || netLost);
+    if (gpsLost || netLost) {
+      $(ti).textContent = title;
+      $(tx).textContent = detail;
+    }
+  }
+}
+setInterval(watchConnectivity, 2000);
+addEventListener('online', watchConnectivity);
+addEventListener('offline', watchConnectivity);
 
 /* ---------- Navigation libre (poids lourd / bus) ---------- */
 

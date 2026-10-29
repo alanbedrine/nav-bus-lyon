@@ -35,9 +35,8 @@ export function parseColor(v) {
   return null;
 }
 
-/** Un morceau est « redondant » s'il longe déjà le tracé (antenne, doublon) ou s'il boucle sur lui-même (retournement). */
-export function isRedundant(part, chain, tol = 30) {
-  if (haversine(part[0], part.at(-1)) < 50) return true; // boucle fermée
+/** Part des points de `part` qui longent déjà `chain` (à `tol` mètres près). */
+export function nearFraction(part, chain, tol = 30) {
   const pr = makeProjector(chain[0]);
   const xy = chain.map(([la, lo]) => pr.toXY(la, lo));
   let near = 0;
@@ -47,24 +46,113 @@ export function isRedundant(part, chain, tol = 30) {
     for (let i = 1; i < xy.length && !ok; i++) ok = pointSegment(x, y, xy[i - 1][0], xy[i - 1][1], xy[i][0], xy[i][1]).dist <= tol;
     if (ok) near++;
   }
-  return near / part.length >= 0.6;
+  return near / part.length;
+}
+
+/** Un morceau est « redondant » s'il longe déjà le tracé (doublon) ou s'il boucle sur lui-même (retournement). */
+export function isRedundant(part, chain, tol = 30) {
+  if (haversine(part[0], part.at(-1)) < 50) return true; // boucle fermée
+  return nearFraction(part, chain, tol) >= 0.6;
+}
+
+const nearestVertex = (chain, pt) => {
+  let bi = 0;
+  let bd = Infinity;
+  chain.forEach((c, i) => {
+    const d = haversine(c, pt);
+    if (d < bd) { bd = d; bi = i; }
+  });
+  return { i: bi, d: bd };
+};
+
+/**
+ * Intègre au tracé les boucles et antennes qui s'y rattachent (ex. la boucle de la Cadière, ligne 106) :
+ * le véhicule sort du tracé principal, parcourt la boucle, puis revient au même point. Les morceaux qui ne se
+ * rattachent pas au tracé (à moins de 80 m) sont ignorés.
+ */
+export function insertDetours(chain, extras, stats = null) {
+  const used = new Set();
+  const CL = 40; // m : extrémités regroupées en un même nœud
+  // Composantes : morceaux reliés entre eux par leurs extrémités
+  const comps = [];
+  extras.forEach((p, i) => {
+    const linked = comps.filter((c) => c.parts.some((q) => [q[0], q.at(-1)].some((e) => haversine(e, p[0]) < CL || haversine(e, p.at(-1)) < CL)));
+    const merged = { parts: [p], idx: [i] };
+    for (const c of linked) {
+      merged.parts.push(...c.parts);
+      merged.idx.push(...c.idx);
+      comps.splice(comps.indexOf(c), 1);
+    }
+    comps.push(merged);
+  });
+  const inserts = [];
+  for (const c of comps) {
+    const total = c.parts.reduce((s, p) => s + pathLength(p), 0);
+    if (total < 80 || total > 3000) continue;
+    // Point de rattachement : extrémité la plus proche du tracé
+    let best = null;
+    for (const p of c.parts) for (const e of [p[0], p.at(-1)]) {
+      const v = nearestVertex(chain, e);
+      if (!best || v.d < best.d) best = { ...v, e };
+    }
+    if (!best || best.d > 80) continue;
+    // Nœuds (extrémités regroupées) et arêtes (morceaux)
+    const nodes = [];
+    const nodeOf = (pt) => {
+      let k = nodes.findIndex((n) => haversine(n, pt) < CL);
+      if (k < 0) { nodes.push(pt); k = nodes.length - 1; }
+      return k;
+    };
+    const edges = c.parts.map((p) => ({ p, a: nodeOf(p[0]), b: nodeOf(p.at(-1)), used: false }));
+    const start = nodeOf(best.e);
+    const seen = new Set([start]);
+    const path = [];
+    const walk = (node) => {
+      for (const e of edges) {
+        if (e.used || (e.a !== node && e.b !== node)) continue;
+        const other = e.a === node ? e.b : e.a;
+        const fwd = e.a === node;
+        if (other !== node && seen.has(other)) continue; // cycle non fermé : ignoré
+        e.used = true;
+        const seg = fwd ? e.p : e.p.slice().reverse();
+        path.push(...seg);
+        if (other === node) { walk(node); continue; } // boucle fermée : on continue depuis le même nœud
+        seen.add(other);
+        walk(other);
+        path.push(...seg.slice().reverse()); // retour par le même chemin
+      }
+    };
+    walk(start);
+    if (path.length > 1) inserts.push({ at: best.i, path });
+  }
+  // Insertion de la fin vers le début pour garder les indices valables
+  inserts.sort((a, b) => b.at - a.at);
+  let out = chain;
+  for (const ins of inserts) out = out.slice(0, ins.at + 1).concat(ins.path, out.slice(ins.at));
+  if (stats && inserts.length) stats.detours = (stats.detours ?? 0) + inserts.length;
+  return out;
 }
 
 /**
  * Chaîne les morceaux d'une MultiLineString ([lon, lat]) en une seule polyligne [lat, lon].
- * On part du plus long morceau, on rattache de proche en proche les morceaux par leurs extrémités, et on écarte
- * les boucles de retournement et les antennes qui longent déjà le tracé (elles créaient des allers-retours
- * parasites, ex. ligne 106 vers Gare d'Oullins).
+ * On part du plus long morceau et on rattache de proche en proche les morceaux voisins. Les doublons qui longent
+ * déjà le tracé sont écartés ; les boucles et antennes qui s'y accrochent deviennent des détours (insertDetours).
  */
 export function chainParts(parts, stats = null) {
   let ps = parts.filter((p) => p && p.length > 1).map((p) => p.map(([lon, lat]) => [lat, lon]));
   if (!ps.length) return [];
   ps.sort((a, b) => b.length - a.length);
   let chain = ps.shift();
+  const extras = [];
   while (ps.length) {
-    const before = ps.length;
-    ps = ps.filter((p) => !isRedundant(p, chain));
-    if (stats) stats.droppedParts = (stats.droppedParts ?? 0) + (before - ps.length);
+    const keep = [];
+    for (const p of ps) {
+      if (isRedundant(p, chain)) {
+        if (nearFraction(p, chain) < 0.6) extras.push(p); // boucle ou antenne hors tracé : détour possible
+        else if (stats) stats.droppedParts = (stats.droppedParts ?? 0) + 1;
+      } else keep.push(p);
+    }
+    ps = keep;
     if (!ps.length) break;
     const head = chain[0];
     const tail = chain[chain.length - 1];
@@ -81,7 +169,7 @@ export function chainParts(parts, stats = null) {
     const [part] = ps.splice(best.i, 1);
     // Petit morceau isolé (antenne, bout de boucle) : le rattacher créerait un saut parasite
     if (best.d > 250 && pathLength(part) < 600) {
-      if (stats) stats.droppedParts = (stats.droppedParts ?? 0) + 1;
+      extras.push(part);
       continue;
     }
     const seg = best.rev ? part.slice().reverse() : part;
@@ -91,7 +179,7 @@ export function chainParts(parts, stats = null) {
       chain = (best.d < 0.5 ? seg.slice(0, -1) : seg).concat(chain);
     }
   }
-  return chain;
+  return extras.length ? insertDetours(chain, extras, stats) : chain;
 }
 
 /** « 106. » + trace « 106E-1 » -> « 106E » ; sinon retire la ponctuation finale. */
@@ -184,6 +272,10 @@ export function normalize(linesFC, stopsFC = null, opts = {}) {
     const p = f.properties ?? {};
     const rawId = pick(p, ['ligne', 'code_ligne', 'nom_ligne', 'numero']);
     const id = rawId ? cleanLineId(rawId, pick(p, ['code_trace'])) : rawId;
+    if (rawId && /[^A-Za-z0-9]$/.test(String(rawId).trim())) {
+      stats.skipped++; // doublon parasite (ex. « 106. » : la ligne 106EX existe déjà)
+      continue;
+    }
     const family = pick(p, ['famille_tr', 'famille_transport', 'famille']);
     if (!id || (family ? family.toUpperCase() !== 'BUS' : isExcludedLine(id))) {
       stats.skipped++;

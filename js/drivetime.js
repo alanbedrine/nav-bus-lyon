@@ -277,6 +277,15 @@ export class DriveTime {
       alerts: [],
     };
     if (s.service) snap.alerts = this._alerts(snap, L);
+    // Limite la plus proche (compte à rebours) : temps de conduite restant avant de la dépasser (négatif = dépassée)
+    const cands = [
+      { id: 'day', label: 'conduite journalière', left: dayCap - dayDrive },
+      { id: 'week', label: 'conduite hebdomadaire', left: L.week - weekDrive },
+      { id: 'fort', label: 'conduite sur deux semaines', left: L.fortnight - snap.fortnightDrive },
+    ];
+    if (s.mode !== 'pause' || !snap.breakDone) cands.push({ id: 'cont', label: 'conduite continue', left: L.cont - cont });
+    if (s.mode === 'pause' && !snap.breakDone) cands.pop(); // en pause incomplète, la conduite continue ne décompte pas
+    snap.limit = cands.reduce((m, c) => (c.left < m.left ? c : m));
     return snap;
   }
 

@@ -118,6 +118,17 @@ export function decodePolyline(str, precision = 6) {
 
 export class RouteError extends Error {}
 
+/** Panneau de sortie / bretelle : « Sortie 12 · A7 · Direction Marseille ». */
+export function signText(sign) {
+  if (!sign) return '';
+  const j = (arr) => (arr ?? []).map((e) => e.text).filter(Boolean).join(', ');
+  const num = j(sign.exit_number_elements);
+  const branch = j(sign.exit_branch_elements);
+  const toward = j(sign.exit_toward_elements);
+  const name = j(sign.exit_name_elements);
+  return [num && `Sortie ${num}`, branch, toward && `Direction ${toward}`, name].filter(Boolean).join(' · ');
+}
+
 export function parseRoute(resp) {
   if (!resp || resp.error || !resp.trip) {
     const code = resp?.error_code;
@@ -140,6 +151,8 @@ export function parseRoute(resp) {
         verbal: m.verbal_pre_transition_instruction ?? m.instruction ?? '',
         alert: m.verbal_transition_alert_instruction ?? '',
         type: m.type ?? 0,
+        exitCount: m.roundabout_exit_count ?? null,
+        sign: signText(m.sign),
         begin: (m.begin_shape_index ?? 0) + offset,
         end: (m.end_shape_index ?? 0) + offset,
         length: (m.length ?? 0) * 1000,

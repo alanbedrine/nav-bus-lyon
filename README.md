@@ -135,3 +135,12 @@ changez `tileUrl` dans `js/config.js` pour un fournisseur dédié (MapTiler, Sta
 ## Licence
 
 Code sous licence [MIT](LICENSE). Les données gardent leur licence : voir [NOTICE.md](NOTICE.md).
+
+## Nouveautés 0.4.0
+
+- Flèche arrondie façon Waze (blanche en thème sombre, noire en thème clair), arrêts posés exactement sur le tracé, étiquettes plus lisibles.
+- Retournement automatique au terminus ; alerte grise en cas de perte de GPS ou de réseau.
+- Zoom adaptatif selon la vitesse et la proximité des intersections.
+- Navigation libre : pictogrammes de manœuvre (rond-points, bretelles, sorties), annonces vocales (activables), bouton « Trajet » avec le détail des manœuvres.
+- RSE : compte à rebours orange avant la limite, alerte rouge une fois dépassée.
+- Ligne 106 : boucles terminales (Cadière) reprises ; la ligne 106E (doublon de la 106EX) est supprimée.

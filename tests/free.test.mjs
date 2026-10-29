@@ -272,3 +272,35 @@ test('chaînage : boucle fermée et antenne isolée écartées, identifiant « 1
   assert.equal(cleanLineId('106', '106-3'), '106');
   assert.equal(cleanLineId('12.', 'xx'), '12');
 });
+
+test('chaînage : une boucle accrochée au tracé devient un détour (arrêts de la Cadière, ligne 106)', () => {
+  const lonlat = (lat, lon) => [lon, lat];
+  const main = Array.from({ length: 40 }, (_, i) => lonlat(45.74 + i * 0.001, 4.8));
+  const spur = Array.from({ length: 6 }, (_, i) => lonlat(45.7595 - i * 0.0004, 4.8 + i * 0.0002)); // part de la ligne vers l'est
+  const loopStart = spur.at(-1);
+  const loop = Array.from({ length: 9 }, (_, i) => [loopStart[0] + 0.0004 * Math.sin((i / 8) * 2 * Math.PI), loopStart[1] + 0.0004 * (1 - Math.cos((i / 8) * 2 * Math.PI))]);
+  loop.push(loop[0]);
+  const stats = {};
+  const chain = chainParts([main, spur, loop], stats);
+  assert.equal(stats.detours, 1);
+  assert.ok(chain.length > main.length + 10);
+  assert.equal(chain[0][0], 45.74);
+  assert.equal(chain.at(-1)[0], 45.779);
+});
+
+test('compte à rebours de la limite la plus proche, puis dépassement', () => {
+  const dt = new DriveTime();
+  dt.startService(T0);
+  let t = drive(dt, T0, 4 * H + 10 * MIN);
+  let s = dt.snapshot(t);
+  assert.equal(s.limit.id, 'cont');
+  assert.ok(Math.abs(s.limit.left - 20 * MIN) < 30000);
+  t = drive(dt, t, 25 * MIN);
+  s = dt.snapshot(t);
+  assert.ok(s.limit.left < 0, 'dépassée');
+  assert.ok(Math.abs(s.limit.left + 5 * MIN) < 30000);
+  t = drive(dt, t, 46 * MIN, 0); // pause complète : plus de dépassement de conduite continue
+  s = dt.snapshot(t);
+  assert.notEqual(s.limit.id, 'cont');
+  assert.ok(s.limit.left > 0);
+});

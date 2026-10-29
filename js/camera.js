@@ -45,7 +45,7 @@ export class Camera {
       this._interactions(true);
     }
     this.onMode(mode);
-    if (mode !== 'free' && this.pos) this.update(this.pos.latlng, this.pos.heading, this.pos.speed, true);
+    if (mode !== 'free' && this.pos) this.update(this.pos.latlng, this.pos.heading, this.pos.speed, true, this.pos.turnDist);
   }
 
   /** suivi <-> nord ; depuis « libre » on revient au suivi. */
@@ -90,16 +90,19 @@ export class Camera {
     this.map.invalidateSize({ animate: false });
   }
 
-  /** Niveau de zoom selon la vitesse (plus on roule vite, plus on voit loin). */
-  _zoomFor(kmh) {
-    if (kmh >= 80) return 16;
-    if (kmh >= 50) return 16.5;
-    if (kmh >= 25) return 17;
-    return 17.5;
+  /** Zoom selon la vitesse (plus on roule vite, plus on voit loin) et la proximité d'un carrefour / virage. */
+  _zoomFor(kmh, turnDist = null) {
+    let z = kmh >= 90 ? 15.5 : kmh >= 70 ? 16 : kmh >= 50 ? 16.5 : kmh >= 25 ? 17 : 17.5;
+    if (turnDist !== null && turnDist !== undefined) {
+      if (turnDist <= 80) z += 1;
+      else if (turnDist <= 200) z += 0.5;
+    }
+    return Math.min(18.5, z);
   }
 
-  update(latlng, heading, speedKmh, force = false) {
-    this.pos = { latlng, heading, speed: speedKmh };
+  /** @param turnDist distance (m) jusqu'au prochain carrefour / virage, ou null */
+  update(latlng, heading, speedKmh, force = false, turnDist = null) {
+    this.pos = { latlng, heading, speed: speedKmh, turnDist };
     if (!this.active || this.mode === 'free') return;
     const map = this.map;
     if (this.mode === 'follow') {
@@ -109,8 +112,10 @@ export class Camera {
         this.el.style.transform = `rotate(${-this.angle}deg)`;
       }
       let z = map.getZoom();
-      const want = this._zoomFor(speedKmh ?? 0);
-      if (force || (Math.abs(want - z) >= 0.5 && Date.now() - this.lastZoomAt > 8000)) {
+      const want = this._zoomFor(speedKmh ?? 0, turnDist);
+      const since = Date.now() - this.lastZoomAt;
+      // on rapproche vite à l'approche d'un carrefour, on éloigne plus lentement (évite le yo-yo)
+      if (force || (want - z >= 0.5 && since > 1500) || (z - want >= 0.5 && since > 6000)) {
         z = want;
         this.lastZoomAt = Date.now();
       }

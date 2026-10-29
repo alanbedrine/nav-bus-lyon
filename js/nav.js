@@ -68,6 +68,24 @@ export class Route {
     };
   }
 
+  /** Virages marqués du tracé (carrefours, tournants) : [{ along, angle }], angle en degrés (0-180). */
+  turns(minAngle = 35, span = 25) {
+    const out = [];
+    for (let i = 1; i < this.cum.length - 1; i++) {
+      const c = this.cum[i];
+      if (c < span || c > this.length - span) continue;
+      const before = bearing(this.pointAt(c - span), this.coords[i]);
+      const after = bearing(this.coords[i], this.pointAt(c + span));
+      const d = Math.abs(((after - before + 540) % 360) - 180);
+      if (d < minAngle) continue;
+      const last = out.at(-1);
+      if (last && c - last.along < 60) {
+        if (d > last.angle) out[out.length - 1] = { along: c, angle: d };
+      } else out.push({ along: c, angle: d });
+    }
+    return out;
+  }
+
   reversed() {
     return new Route(this.coords.slice().reverse());
   }

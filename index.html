@@ -104,13 +104,20 @@
       <div class="progress" aria-hidden="true"><i id="nav-progress"></i></div>
     </div>
 
-    <div id="off-banner" class="banner" role="alert" hidden>
+    <div class="alerts">
+      <div id="net-banner" class="banner grey" role="status" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8.8a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20v.01M3 3l18 18"/></svg>
+        <div><strong id="net-title">Signal perdu</strong><span id="net-text"></span></div>
+      </div>
+      <div id="off-banner" class="banner" role="alert" hidden>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3Zm0 6v6m0 3v.01"/></svg>
       <div><strong>Délocalisé</strong><span id="off-text">Rejoignez le tracé de la ligne</span></div>
     </div>
-    <div id="arrived-banner" class="banner ok" role="status" hidden>
+      <div id="arrived-banner" class="banner ok" role="status" hidden>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>
-      <div><strong>Terminus atteint</strong><span>Faites un retournement ou terminez</span></div>
+      <div><strong>Terminus atteint</strong><span id="arrived-text">Retournement automatique dans quelques secondes…</span></div>
+    </div>
+
     </div>
 
     <div class="speedbox" aria-live="off">
@@ -128,6 +135,16 @@
       <button id="btn-turn" class="btn ghost"><svg viewBox="0 0 24 24"><path d="M7 7h9a4 4 0 0 1 0 8H8m0 0 3-3m-3 3 3 3M7 7l3-3M7 7l3 3"/></svg>Retournement</button>
       <button id="btn-end" class="btn danger"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Terminer</button>
     </div>
+  </section>
+
+  <!-- Détail du trajet (navigation libre) -->
+  <section id="trip" class="sheet tall" aria-label="Détail du trajet" hidden>
+    <div class="grabber" aria-hidden="true"></div>
+    <header class="line-head">
+      <button id="trip-back" class="icon-btn" aria-label="Fermer"><svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></svg></button>
+      <div class="pg-title"><h1 id="trip-title">Trajet</h1><small id="trip-sub" class="muted"></small></div>
+    </header>
+    <ol id="trip-list" class="steps"></ol>
   </section>
 
   <!-- Ma position sur la ligne -->
@@ -223,7 +240,7 @@
   <!-- Navigation libre : guidage -->
   <section id="fnav" hidden>
     <div class="topcard fn-top">
-      <span id="fn-icon" class="fn-icon" aria-hidden="true">↑</span>
+      <span id="fn-icon" class="fn-icon" aria-hidden="true"></span>
       <div class="topcard-text">
         <small id="fn-dist">–</small>
         <strong id="fn-text">Suivez l’itinéraire</strong>
@@ -235,13 +252,24 @@
       </div>
       <div class="progress" aria-hidden="true"><i id="fn-progress"></i></div>
     </div>
-    <div id="fn-banner" class="banner" role="alert" hidden>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3Zm0 6v6m0 3v.01"/></svg>
-      <div><strong id="fn-banner-title">Recalcul</strong><span id="fn-banner-text"></span></div>
-    </div>
-    <div id="fn-alert" class="banner dt-banner" role="alert" hidden>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg>
-      <div><strong id="fn-alert-title">Temps de conduite</strong><span id="fn-alert-text"></span></div>
+    <div class="alerts">
+      <div id="fn-net" class="banner grey" role="status" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8.8a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20v.01M3 3l18 18"/></svg>
+        <div><strong id="fn-net-title">Signal perdu</strong><span id="fn-net-text"></span></div>
+      </div>
+      <div id="fn-banner" class="banner" role="alert" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3Zm0 6v6m0 3v.01"/></svg>
+        <div><strong id="fn-banner-title">Recalcul</strong><span id="fn-banner-text"></span></div>
+      </div>
+      <div id="fn-count" class="banner orange" role="alert" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg>
+        <div><strong id="fn-count-title">Pause dans</strong><span id="fn-count-text"></span></div>
+        <b id="fn-count-time" class="count-time">00:00</b>
+      </div>
+      <div id="fn-alert" class="banner orange dt-banner" role="alert" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg>
+        <div><strong id="fn-alert-title">Temps de conduite</strong><span id="fn-alert-text"></span></div>
+      </div>
     </div>
     <div class="speedbox">
       <div class="speed"><strong id="fn-speed">0</strong><small>km/h</small></div>
@@ -250,8 +278,10 @@
     <button id="fn-dt" class="dt-pill" hidden aria-label="Temps de conduite">
       <small id="fn-dt-label">Conduite</small><strong id="fn-dt-val">0 min</strong>
     </button>
+    <button id="fn-voice" class="fab third" aria-label="Guidage vocal" aria-pressed="true"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path class="vw" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/><path class="vx" d="m17 9 5 6m0-6-5 6"/></svg></button>
     <button id="fn-recenter" class="fab" data-mode="follow" aria-label="Mode suivi"><svg class="cam-follow" viewBox="0 0 24 24"><path d="M12 3 5 20l7-4 7 4-7-17Z"/></svg><span class="cam-n">N</span><svg class="cam-free" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></svg></button>
     <div class="actions">
+      <button id="fn-trip" class="btn ghost" aria-label="Détail du trajet"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Trajet</button>
       <button id="fn-pause" class="btn ghost" hidden>Pause conduite</button>
       <button id="fn-end" class="btn danger"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Terminer</button>
     </div>

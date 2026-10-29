@@ -1,5 +1,5 @@
 // Service worker nav Lyon bus : coquille de l'appli hors ligne, données lignes et tuiles en cache.
-const VERSION = 'nav-lyon-bus-v5';
+const VERSION = 'nav-lyon-bus-v6';
 const SHELL = [
   './',
   'index.html',
@@ -11,6 +11,10 @@ const SHELL = [
   'js/geo.js',
   'js/nav.js',
   'js/services.js',
+  'js/freenav.js',
+  'js/routing.js',
+  'js/drivetime.js',
+  'js/config.js',
   'vendor/leaflet/leaflet.js',
   'vendor/leaflet/leaflet.css',
   'icons/icon-192.png',

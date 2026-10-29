@@ -1,8 +1,10 @@
 import { Route, NavEngine } from './nav.js';
+import { initFree, DRIVE_WARNING } from './freenav.js';
 import { Locator, SpeedLimit, KeepAwake } from './services.js';
 import { pathLength } from './geo.js';
 
 const L = window.L;
+let free = null; // navigation libre (initialisée plus bas)
 const $ = (id) => document.getElementById(id);
 
 /* ---------- Utilitaires ---------- */
@@ -153,6 +155,7 @@ function applyTheme(next) {
     drawRoute();
     if (app.fix) onFix(app.fix);
   }
+  free?.redraw();
 }
 const toggleTheme = () => applyTheme(theme === 'dark' ? 'light' : 'dark');
 
@@ -373,8 +376,8 @@ async function chooseDirection(variant) {
   showPreview(app.routeData.variants, variant);
   const ok = await ask({
     title: 'Lancer la navigation ?',
-    text: `Ligne ${app.line.id} vers ${destLabel(variant)}`,
-    ok: 'Lancer',
+    text: `Ligne ${app.line.id} vers ${destLabel(variant)}\n\n${DRIVE_WARNING}`,
+    ok: 'J’ai compris, lancer',
   });
   if (ok) startNav(variant);
 }
@@ -458,6 +461,11 @@ function onFix(fix) {
   if (!app.firstFix) {
     app.firstFix = true;
     if (!app.nav) map.setView([fix.lat, fix.lon], 14);
+  }
+  free?.feed(fix); // compteurs de conduite (si un service est ouvert)
+  if (free?.active) {
+    free.onFix(fix);
+    return;
   }
   if (!app.nav) {
     setMe(fix.lat, fix.lon, fix.heading);
@@ -567,6 +575,10 @@ $('info-ok').addEventListener('click', () => {
   $('info').hidden = true;
   try { localStorage.setItem(INFO_KEY, '1'); } catch {}
 });
+
+/* ---------- Navigation libre (poids lourd / bus) ---------- */
+
+free = initFree({ map, ask, toast, keepAwake, speedLimit, setMe, centerOffset, app, fmtDist, fmtTime, getTheme: () => theme });
 
 /* ---------- Démarrage ---------- */
 

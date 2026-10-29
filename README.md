@@ -76,6 +76,29 @@ Le workflow `.github/workflows/update-data.yml` régénère et commit les donné
 Limite de vitesse : requêtes Overpass (OSM) autour de la position, avec cache et repli ; valeur « estimée » (pastille pointillée)
 quand seule la catégorie de route est connue.
 
+## Navigation libre (poids lourd / bus)
+
+Onglet « Navigation libre » de l'accueil. **Réservé à la navigation libre : rien de tout cela n'existe dans le suivi de ligne TCL**, qui garde son tracé fixe sans recalcul.
+
+- **Adresse** : API de géocodage de l'État (Géoplateforme IGN, `data.geopf.fr/geocodage`), avec recherche à partir de 3 caractères, biaisée vers votre position.
+- **Véhicule** : camion (PTAC 3,5 à 44 t ou valeur libre) ou bus / autocar (modèles types), hauteur, largeur, longueur, charge à l'essieu, matières dangereuses, péages. Enregistré sur l'appareil (localStorage). Les gabarits proposés sont indicatifs : le conducteur saisit ceux de son véhicule.
+- **Itinéraire** : moteur Valhalla (profils `truck` / `bus`) qui évite les voies interdites au gabarit saisi (restrictions OpenStreetMap : poids, hauteur, largeur, longueur, essieu, accès poids lourds). Recalcul automatique si vous sortez de l'itinéraire (après 8 s).
+- **Avertissements** : message « téléphone au volant » avant tout lancement de navigation (TCL et libre) ; en navigation libre, rappel que les panneaux prévalent et que les données peuvent être erronées, affiché dans l'aperçu et avant le départ. ZFE / Crit'Air, arrêtés temporaires et horaires de livraison ne sont **pas** pris en compte.
+- **Temps de conduite** : choix RSE ou RSN, bouton « Début / Fin de service » (équivalent d'insertion de la carte), pause détectée automatiquement après 2 min à l'arrêt (0 km/h) ou bouton « Pause conduite ». Les arrêts de moins de 2 min (feux, embouteillages) comptent comme de la conduite, par prudence. Alertes (bandeau + vibration) 30 min et 15 min avant la limite, puis à la limite.
+  - **RSE** : règlement (CE) 561/2006 : 4 h 30 → pause de 45 min (ou 15 puis 30 min), 9 h par jour (10 h deux fois par semaine), 56 h par semaine, 90 h sur deux semaines, repos journalier 11 h (réduit 9 h, 3 fois max).
+  - **RSN** : seuils **modifiables**, pré-remplis avec ceux du RSE. Ils n'ont pas été vérifiés : à adapter à votre convention et à votre type de service.
+  - Non suivis : repos hebdomadaire, repos fractionné 3 h + 9 h, compensations. Indicatif seulement : ne remplace pas le chronotachygraphe.
+- Les compteurs sont calculés sur ce téléphone avec le GPS ; ils s'arrêtent si l'appli est fermée (elle suppose que le dernier état continue).
+
+### Services externes (à vérifier avant mise en production)
+
+Modifiez `js/config.js` pour changer d'API :
+
+- `geocodeUrl` : géocodage Géoplateforme (gratuit, sans clé).
+- `routeUrl` : par défaut l'instance publique Valhalla de FOSSGIS (`valhalla1.openstreetmap.de`), **sans garantie de disponibilité ni d'usage intensif**. Pour une vraie exploitation, installez votre propre Valhalla (ou un hébergeur d'itinéraires) et autorisez CORS pour votre domaine. Ces deux services n'ont pas pu être testés en conditions réelles depuis l'environnement de développement (tests avec réponses simulées).
+- Les adresses saisies, votre position de départ et la destination sont envoyées à ces services. Rien n'est envoyé à nav Lyon bus lui-même.
+- La limitation de vitesse affichée est celle des véhicules légers (pas de limite poids lourd).
+
 ## Limites connues
 
 - Pas d'horaires : l'appli suit le tracé et annonce les arrêts, mais ne dit pas si vous êtes en avance ou en retard.

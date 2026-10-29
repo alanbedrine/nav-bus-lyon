@@ -34,17 +34,43 @@
         </button>
       </div>
     </header>
-    <label class="search">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
-      <input id="q" type="search" inputmode="search" autocomplete="off" placeholder="Rechercher une ligne ou un terminus" aria-label="Rechercher une ligne ou un terminus">
-    </label>
-    <div class="chips" role="group" aria-label="Type de lignes">
-      <button class="chip on" data-f="all">Toutes</button>
-      <button class="chip" data-f="reg">Lignes</button>
-      <button class="chip" data-f="sco">Scolaires (JD)</button>
+    <div class="tabs" role="tablist" aria-label="Mode de navigation">
+      <button id="tab-tcl" class="tab on" role="tab" aria-selected="true">Lignes TCL</button>
+      <button id="tab-free" class="tab" role="tab" aria-selected="false">Navigation libre</button>
     </div>
-    <p id="data-status" class="muted" role="status"></p>
-    <ul id="lines" class="list"></ul>
+    <div id="tcl-panel" class="panel">
+      <label class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+        <input id="q" type="search" inputmode="search" autocomplete="off" placeholder="Rechercher une ligne ou un terminus" aria-label="Rechercher une ligne ou un terminus">
+      </label>
+      <div class="chips" role="group" aria-label="Type de lignes">
+        <button class="chip on" data-f="all">Toutes</button>
+        <button class="chip" data-f="reg">Lignes</button>
+        <button class="chip" data-f="sco">Scolaires (JD)</button>
+      </div>
+      <p id="data-status" class="muted" role="status"></p>
+      <ul id="lines" class="list"></ul>
+    </div>
+
+    <!-- Navigation libre : camion / bus, hors lignes TCL -->
+    <div id="free-panel" class="panel" hidden>
+      <button id="fv-card" class="card-btn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 6h12v10H2zM14 9h4l4 4v3h-8M6 19.5a1.5 1.5 0 1 0 0-.01M17 19.5a1.5 1.5 0 1 0 0-.01"/></svg>
+        <span class="row-text"><strong id="fv-title">Véhicule</strong><small id="fv-sub"></small></span>
+        <span class="chev">Modifier ›</span>
+      </button>
+      <button id="fd-card" class="card-btn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg>
+        <span class="row-text"><strong id="fd-title">Temps de conduite</strong><small id="fd-sub"></small></span>
+        <span class="chev">Ouvrir ›</span>
+      </button>
+      <label class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+        <input id="fq" type="search" inputmode="search" autocomplete="off" placeholder="Saisir une adresse de destination" aria-label="Adresse de destination">
+      </label>
+      <p id="fq-status" class="muted" role="status"></p>
+      <ul id="fres" class="list"></ul>
+    </div>
   </section>
 
   <!-- Choix du terminus -->
@@ -100,6 +126,122 @@
     </div>
   </section>
 
+  <!-- Navigation libre : fiche véhicule -->
+  <section id="vehicle" class="sheet tall" aria-label="Véhicule" hidden>
+    <div class="grabber" aria-hidden="true"></div>
+    <header class="line-head">
+      <button id="vh-back" class="icon-btn" aria-label="Retour"><svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></svg></button>
+      <h1>Mon véhicule</h1>
+    </header>
+    <div class="form">
+      <div class="chips" role="group" aria-label="Type de véhicule">
+        <button class="chip on" data-kind="truck">Poids lourd</button>
+        <button class="chip" data-kind="bus">Bus / autocar</button>
+      </div>
+      <label id="vh-preset-row" hidden>Modèle<select id="vh-preset"></select></label>
+      <label>Poids total en charge (t)
+        <input id="vh-weight" type="text" inputmode="decimal" autocomplete="off">
+      </label>
+      <div id="vh-ptac" class="chips" role="group" aria-label="PTAC courants"></div>
+      <div class="grid2">
+        <label>Hauteur (m)<input id="vh-height" type="text" inputmode="decimal" autocomplete="off"></label>
+        <label>Largeur (m)<input id="vh-width" type="text" inputmode="decimal" autocomplete="off"></label>
+        <label>Longueur (m)<input id="vh-length" type="text" inputmode="decimal" autocomplete="off"></label>
+        <label id="vh-axle-row">Charge à l’essieu (t)<input id="vh-axle" type="text" inputmode="decimal" autocomplete="off"></label>
+      </div>
+      <label class="check" id="vh-hazmat-row"><input id="vh-hazmat" type="checkbox"><span>Transport de matières dangereuses</span></label>
+      <label class="check"><input id="vh-tolls" type="checkbox"><span>Éviter les péages</span></label>
+      <p class="muted">Valeurs indicatives : saisissez les dimensions et poids réels de votre véhicule (carte grise, plaque constructeur). Les restrictions affichées par l’itinéraire dépendent d’OpenStreetMap et peuvent être incomplètes.</p>
+      <p id="vh-error" class="form-error" role="alert" hidden></p>
+      <button id="vh-save" class="btn primary wide">Enregistrer</button>
+    </div>
+  </section>
+
+  <!-- Navigation libre : temps de conduite (RSE / RSN) -->
+  <section id="dt" class="sheet tall" aria-label="Temps de conduite" hidden>
+    <div class="grabber" aria-hidden="true"></div>
+    <header class="line-head">
+      <button id="dt-back" class="icon-btn" aria-label="Retour"><svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></svg></button>
+      <h1>Temps de conduite</h1>
+    </header>
+    <div class="form">
+      <div class="chips" role="group" aria-label="Réglementation">
+        <button class="chip on" data-regime="RSE">RSE</button>
+        <button class="chip" data-regime="RSN">RSN</button>
+      </div>
+      <p id="dt-regime-note" class="muted"></p>
+      <div id="dt-stats" class="stats"></div>
+      <div id="dt-alerts" class="alert-list"></div>
+      <div class="grid2">
+        <button id="dt-service" class="btn primary">Début de service</button>
+        <button id="dt-pause" class="btn ghost">Pause conduite</button>
+      </div>
+      <details id="dt-limits" hidden>
+        <summary>Seuils RSN (modifiables)</summary>
+        <p class="muted">Pré-remplis avec les valeurs du RSE : à vérifier et adapter à votre convention / votre type de service. Non officiels.</p>
+        <div class="grid2">
+          <label>Conduite continue (h)<input id="lm-cont" type="text" inputmode="decimal"></label>
+          <label>Pause (min)<input id="lm-break" type="text" inputmode="decimal"></label>
+          <label>Conduite journalière (h)<input id="lm-day" type="text" inputmode="decimal"></label>
+          <label>Conduite hebdo (h)<input id="lm-week" type="text" inputmode="decimal"></label>
+        </div>
+        <button id="lm-save" class="btn ghost wide">Appliquer les seuils</button>
+      </details>
+      <button id="dt-reset" class="link-btn">Réinitialiser tous les compteurs</button>
+      <p class="muted">Indicatif : ces compteurs sont calculés avec le GPS de ce téléphone. Ils ne remplacent ni le chronotachygraphe ni votre responsabilité de conducteur.</p>
+    </div>
+  </section>
+
+  <!-- Navigation libre : aperçu de l'itinéraire -->
+  <section id="route-prev" class="sheet" aria-label="Itinéraire" hidden>
+    <div class="grabber" aria-hidden="true"></div>
+    <header class="line-head">
+      <button id="rp-back" class="icon-btn" aria-label="Retour"><svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></svg></button>
+      <h1 id="rp-dest">Destination</h1>
+    </header>
+    <div class="rp-sum"><strong id="rp-dist">–</strong><span id="rp-time">–</span><span id="rp-eta" class="muted">–</span></div>
+    <p id="rp-veh" class="muted"></p>
+    <ul id="rp-warn" class="warn-list"></ul>
+    <button id="rp-go" class="btn primary wide">Lancer la navigation</button>
+  </section>
+
+  <!-- Navigation libre : guidage -->
+  <section id="fnav" hidden>
+    <div class="topcard fn-top">
+      <span id="fn-icon" class="fn-icon" aria-hidden="true">↑</span>
+      <div class="topcard-text">
+        <small id="fn-dist">–</small>
+        <strong id="fn-text">Suivez l’itinéraire</strong>
+        <span id="fn-street" class="next"></span>
+      </div>
+      <div class="topcard-stats">
+        <strong id="fn-remaining">–</strong>
+        <small id="fn-eta">–</small>
+      </div>
+      <div class="progress" aria-hidden="true"><i id="fn-progress"></i></div>
+    </div>
+    <div id="fn-banner" class="banner" role="alert" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3Zm0 6v6m0 3v.01"/></svg>
+      <div><strong id="fn-banner-title">Recalcul</strong><span id="fn-banner-text"></span></div>
+    </div>
+    <div id="fn-alert" class="banner dt-banner" role="alert" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg>
+      <div><strong id="fn-alert-title">Temps de conduite</strong><span id="fn-alert-text"></span></div>
+    </div>
+    <div class="speedbox">
+      <div class="speed"><strong id="fn-speed">0</strong><small>km/h</small></div>
+      <div id="fn-limit" class="limit" title="Limitation de vitesse" hidden><span id="fn-limit-val">–</span></div>
+    </div>
+    <button id="fn-dt" class="dt-pill" hidden aria-label="Temps de conduite">
+      <small id="fn-dt-label">Conduite</small><strong id="fn-dt-val">0 min</strong>
+    </button>
+    <button id="fn-recenter" class="fab" aria-label="Recentrer"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></svg></button>
+    <div class="actions">
+      <button id="fn-pause" class="btn ghost" hidden>Pause conduite</button>
+      <button id="fn-end" class="btn danger"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Terminer</button>
+    </div>
+  </section>
+
   <!-- Localisation requise -->
   <!-- Accès réservé aux mobiles et tablettes -->
   <section id="desktop" class="overlay" role="alert" hidden>
@@ -137,7 +279,7 @@
   <aside id="info" class="info" role="dialog" aria-labelledby="info-title" hidden>
     <h2 id="info-title">Bienvenue sur nav Lyon bus</h2>
     <p>Application <strong>gratuite</strong> et <strong>non officielle</strong>, sans lien avec les TCL ni SYTRAL Mobilités. Elle est développée par des conducteurs, pour des conducteurs.</p>
-    <p class="muted">Aucun compte ni cookie de suivi. Un seul cookie technique de 3 h permet de reprendre votre navigation si vous quittez l'appli. Votre position sert uniquement à la navigation et n'est pas enregistrée.</p>
+    <p class="muted">Aucun compte ni cookie de suivi. Un seul cookie technique de 3 h permet de reprendre votre navigation si vous quittez l'appli. Votre position sert uniquement à la navigation et n'est pas enregistrée. En navigation libre, l'adresse et les points de départ et d'arrivée sont envoyés aux services d'adresse (IGN) et d'itinéraire ; votre véhicule et vos compteurs de conduite restent sur votre téléphone.</p>
     <button id="info-ok" class="btn primary">J'ai compris</button>
   </aside>
 

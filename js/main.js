@@ -1,5 +1,9 @@
 import { Route, NavEngine } from './nav.js';
 import { initFree, DRIVE_WARNING } from './freenav.js';
+import { Camera } from './camera.js';
+import { CONFIG, APP_VERSION } from './config.js';
+import { makeSheet } from './sheet.js';
+import { isDemo, DemoLocator, demoNet } from './demo.js';
 import { Locator, SpeedLimit, KeepAwake } from './services.js';
 import { pathLength } from './geo.js';
 
@@ -92,16 +96,11 @@ function ask({ title, text, ok = 'OK', cancel = 'Annuler' }) {
 
 /* ---------- Carte ---------- */
 
-const map = L.map('map', { zoomControl: false, attributionControl: true, preferCanvas: true }).setView([45.764, 4.8357], 13);
-const TILE_OPTS = {
-  subdomains: 'abcd',
-  maxZoom: 19,
-  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a>',
-};
-const tiles = {
-  dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', TILE_OPTS),
-  light: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', TILE_OPTS),
-};
+const map = L.map('map', { zoomControl: false, attributionControl: false, preferCanvas: true, zoomSnap: 0.5 }).setView([45.764, 4.8357], 13);
+const tileLayer = L.tileLayer(CONFIG.tileUrl, { subdomains: CONFIG.tileSubdomains, maxZoom: CONFIG.tileMaxZoom, crossOrigin: false }).addTo(map);
+const tileLayerDark = CONFIG.tileUrlDark ? L.tileLayer(CONFIG.tileUrlDark, { subdomains: CONFIG.tileSubdomains, maxZoom: CONFIG.tileMaxZoom }) : null;
+// Attribution hors de la carte (la carte peut tourner en mode suivi) : obligatoire pour OpenStreetMap.
+$('attrib').innerHTML = `${CONFIG.tileAttribution} · <a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>`;
 
 const meIcon = L.divIcon({
   className: 'me',
@@ -113,20 +112,23 @@ let meMarker = null;
 let meHeading = 0;
 const routeLayers = L.layerGroup().addTo(map);
 let previewLayer = null;
+const camera = new Camera(map, $('map'), { onMode: (m) => setCamButtons(m) });
+function setCamButtons(mode) {
+  for (const id of ['btn-recenter', 'fn-recenter']) {
+    const b = $(id);
+    if (!b) continue;
+    b.dataset.mode = mode;
+    b.setAttribute('aria-label', mode === 'follow' ? 'Mode suivi : passer en nord en haut' : mode === 'north' ? 'Nord en haut : passer en mode suivi' : 'Recentrer sur ma position');
+  }
+}
 
 function setMe(lat, lon, heading) {
   if (!meMarker) meMarker = L.marker([lat, lon], { icon: meIcon, interactive: false, zIndexOffset: 1000 }).addTo(map);
   meMarker.setLatLng([lat, lon]);
   if (heading !== null && heading !== undefined) meHeading = heading;
+  if (camera.rotated) meHeading = camera.angle; // la carte tourne : la flèche reste vers le haut
   const svg = meMarker.getElement()?.querySelector('svg');
   if (svg) svg.style.transform = `rotate(${meHeading}deg)`;
-}
-
-function centerOffset(latlng, zoom, shiftRatio = 0.16) {
-  const size = map.getSize();
-  const p = map.project(latlng, zoom);
-  p.y += size.y * shiftRatio; // le véhicule apparaît dans le tiers bas de l'écran
-  return map.unproject(p, zoom);
 }
 
 /* ---------- Thème clair / sombre ---------- */
@@ -144,10 +146,10 @@ try {
 function applyTheme(next) {
   theme = next;
   document.documentElement.dataset.theme = theme;
-  document.querySelector('meta[name="theme-color"]').setAttribute('content', THEME_COLORS[theme].bar);
-  const other = theme === 'dark' ? tiles.light : tiles.dark;
-  if (map.hasLayer(other)) map.removeLayer(other);
-  if (!map.hasLayer(tiles[theme])) tiles[theme].addTo(map);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLORS[theme].bar);
+  if (tileLayerDark) {
+    if (theme === 'dark') { map.removeLayer(tileLayer); tileLayerDark.addTo(map); } else { map.removeLayer(tileLayerDark); tileLayer.addTo(map); }
+  }
   try {
     localStorage.setItem(THEME_KEY, theme);
   } catch {}
@@ -171,7 +173,8 @@ const app = {
   nav: null, // { variant, route, engine, follow, avgKmh, last }
 };
 applyTheme(theme);
-const locator = new Locator({ onFix: onFix, onStatus: setGate });
+const DEMO = isDemo();
+const locator = DEMO ? new DemoLocator({ onFix: onFix, onStatus: setGate }) : new Locator({ onFix: onFix, onStatus: setGate });
 const speedLimit = new SpeedLimit();
 const keepAwake = new KeepAwake();
 
@@ -386,7 +389,7 @@ async function chooseDirection(variant) {
 
 function startNav(variant) {
   const route = new Route(variant.coords);
-  app.nav = { variant, route, engine: new NavEngine(route), follow: true, avgKmh: 18, layers: null, stops: computeStops(variant, route) };
+  app.nav = { variant, route, engine: new NavEngine(route), avgKmh: 18, layers: null, stops: computeStops(variant, route), nextIdx: -2 };
   previewLayer?.remove();
   previewLayer = null;
   drawRoute();
@@ -398,8 +401,9 @@ function startNav(variant) {
   keepAwake.enable().then((ok) => {
     if (!ok) toast('Écran : impossible de le garder allumé sur ce navigateur');
   });
-  map.setZoom(Math.max(map.getZoom(), 16), { animate: false });
+  camera.start('follow');
   saveSession();
+  if (DEMO) locator.follow(variant.coords);
   if (app.fix) onFix(app.fix);
 }
 
@@ -434,6 +438,9 @@ async function endNav() {
   clearSession();
   app.nav = null;
   routeLayers.clearLayers();
+  camera.stop();
+  if (DEMO) locator.halt();
+  $('progress').hidden = true;
   await keepAwake.disable();
   $('nav').hidden = true;
   $('off-banner').hidden = $('arrived-banner').hidden = true;
@@ -448,11 +455,13 @@ async function turnAround() {
   const ok = await ask({ title: 'Retournement', text: `Repartir vers ${destLabel(opposite)} ?`, ok: 'Retourner' });
   if (!ok) return;
   const route = new Route(opposite.coords);
-  Object.assign(app.nav, { variant: opposite, route, engine: new NavEngine(route), follow: true, stops: computeStops(opposite, route) });
+  Object.assign(app.nav, { variant: opposite, route, engine: new NavEngine(route), stops: computeStops(opposite, route), nextIdx: -2 });
   $('nav-dest').textContent = destLabel(opposite);
+  if (camera.mode === 'free') camera.recenter();
   $('arrived-banner').hidden = true;
   drawRoute();
   saveSession();
+  if (DEMO) locator.follow(opposite.coords);
   if (app.fix) onFix(app.fix);
 }
 
@@ -484,14 +493,32 @@ function onFix(fix) {
   n.layers.done.setLatLngs(done);
   n.layers.todo.setLatLngs(todo);
 
-  // Bandeau
-  $('nav-remaining').textContent = fmtDist(s.remaining);
+  // Bandeau : prochains arrêts en grand, terminus en petit
   if (fix.speedKmh > 5) n.avgKmh = n.avgKmh * 0.9 + fix.speedKmh * 0.1;
   const eta = new Date(Date.now() + (s.remaining / 1000 / Math.max(n.avgKmh, 12)) * 3600 * 1000);
-  $('nav-eta').textContent = s.state === 'arrived' ? 'Arrivé' : `Arrivée ${fmtTime(eta)}`;
+  $('nav-eta').textContent = s.state === 'arrived' ? 'Arrivé' : `${fmtDist(s.remaining)} · ${fmtTime(eta)}`;
   $('nav-progress').style.width = `${Math.round(s.progress * 100)}%`;
-  const next = s.state === 'off' ? null : n.stops.find((st) => st.along > s.along + 15);
-  $('nav-next').textContent = s.state === 'arrived' ? 'Terminus' : next ? `${next.name} · ${fmtDist(next.along - s.along)}` : n.stops.length ? 'Dernier arrêt passé' : '';
+  const upcoming = s.state === 'off' ? [] : n.stops.filter((st) => st.along > s.along + 15);
+  if (s.state === 'arrived') {
+    $('nav-stop').textContent = 'Terminus';
+    $('nav-stopdist').textContent = '';
+    $('nav-then').textContent = '';
+  } else if (s.state === 'off') {
+    $('nav-stop').textContent = 'Délocalisé';
+    $('nav-stopdist').textContent = fmtDist(s.offDistance);
+    $('nav-then').textContent = '';
+  } else if (upcoming.length) {
+    $('nav-stop').textContent = upcoming[0].name;
+    $('nav-stopdist').textContent = fmtDist(upcoming[0].along - s.along);
+    $('nav-then').textContent = upcoming.length > 1 ? `Ensuite : ${upcoming.slice(1, 3).map((x) => x.name).join(' · ')}` : 'Dernier arrêt';
+  } else {
+    $('nav-stop').textContent = n.stops.length ? 'Dernier arrêt passé' : 'Suivez la ligne';
+    $('nav-stopdist').textContent = fmtDist(s.remaining);
+    $('nav-then').textContent = '';
+  }
+  n.along = s.along;
+  n.state = s.state;
+  updateProgress();
 
   const off = s.state === 'off';
   $('off-banner').hidden = !off;
@@ -512,21 +539,64 @@ function onFix(fix) {
     }
   });
 
-  // Caméra
-  if (n.follow) {
-    const z = map.getZoom();
-    map.setView(centerOffset(L.latLng(s.snapped), z), z, { animate: true, duration: 0.8 });
-  }
+  // Caméra : suivi (carte qui tourne), nord en haut, ou carte libre
+  camera.update(L.latLng(s.snapped), moving || s.state !== 'off' ? s.heading : fix.heading, fix.speedKmh);
+  setMe(s.snapped[0], s.snapped[1], heading);
 }
 
-map.on('dragstart', () => {
-  if (app.nav) app.nav.follow = false;
-});
 $('btn-recenter').addEventListener('click', () => {
   if (!app.nav) return;
-  app.nav.follow = true;
+  if (camera.mode === 'free') camera.recenter();
+  else camera.cycle();
   if (app.fix) onFix(app.fix);
 });
+
+/* ---------- Ma position sur la ligne ---------- */
+
+let pgKey = '';
+function openProgress() {
+  if (!app.nav) return;
+  pgKey = '';
+  $('progress').hidden = false;
+  updateProgress(true);
+}
+function updateProgress(scroll = false) {
+  const n = app.nav;
+  if (!n || $('progress').hidden) return;
+  const idx = n.stops.findIndex((st) => st.along > (n.along ?? 0) + 15);
+  const key = `${n.variant.key}|${idx}|${n.state}`;
+  const color = routeColor(app.line?.color, theme);
+  $('pg-list').style.setProperty('--c', color);
+  $('pg-badge').replaceWith(Object.assign(badge(app.line), { id: 'pg-badge', className: 'badge big' }));
+  $('pg-title').textContent = `Ligne ${app.line.id}`;
+  const remaining = n.route.length - (n.along ?? 0);
+  $('pg-sub').textContent = `Vers ${destLabel(n.variant)} · reste ${fmtDist(remaining)}`;
+  if (key === pgKey) {
+    // seules les distances changent
+    n.stops.forEach((st, i) => {
+      const d = document.querySelector(`#pg-list li[data-i="${i}"] small`);
+      if (d && i >= idx && idx !== -1) d.textContent = fmtDist(st.along - n.along);
+    });
+    return;
+  }
+  pgKey = key;
+  const items = [];
+  n.stops.forEach((st, i) => {
+    if (i === (idx === -1 ? n.stops.length : idx)) items.push(el('li', { class: 'me' }, el('span', {}, el('i'), el('em', {}, n.state === 'off' ? 'Délocalisé' : 'Vous êtes ici'))));
+    const li = el('li', { class: i < (idx === -1 ? n.stops.length : idx) ? 'passed' : i === idx ? 'next' : '', 'data-i': String(i) }, st.name, st.pmr ? el('span', { class: 'pmr', title: 'Accessible PMR' }, '♿') : '', el('small', {}, i >= idx && idx !== -1 ? fmtDist(st.along - (n.along ?? 0)) : ''));
+    items.push(li);
+  });
+  if (idx === -1 && n.stops.length) items.push(el('li', { class: 'me' }, el('span', {}, el('i'), el('em', {}, 'Vous êtes ici'))));
+  if (!n.stops.length) items.push(el('li', {}, 'Aucun arrêt disponible pour ce tracé'));
+  $('pg-list').replaceChildren(...items);
+  if (scroll || true) {
+    const target = $('pg-list').querySelector('li.next') ?? $('pg-list').querySelector('li.me');
+    target?.scrollIntoView({ block: 'center' });
+  }
+}
+$('btn-stops').addEventListener('click', openProgress);
+$('pg-back').addEventListener('click', () => ($('progress').hidden = true));
+
 $('btn-turn').addEventListener('click', () => app.nav && turnAround());
 $('btn-end').addEventListener('click', () => app.nav && endNav());
 $('btn-theme').addEventListener('click', toggleTheme);
@@ -576,13 +646,33 @@ $('info-ok').addEventListener('click', () => {
   try { localStorage.setItem(INFO_KEY, '1'); } catch {}
 });
 
+/* ---------- Feuilles déplaçables + À propos ---------- */
+
+for (const id of ['home', 'line', 'route-prev']) makeSheet($(id), { start: 'mid' });
+for (const id of ['progress', 'vehicle', 'dt', 'about']) makeSheet($(id), { start: 'full' });
+
+$('ab-version').textContent = `v${APP_VERSION}`;
+const gh = CONFIG.repoUrl.replace(/\/$/, '');
+$('ab-bug').href = `${gh}/issues/new?template=bug.yml`;
+$('ab-idea').href = `${gh}/issues/new?template=idee.yml`;
+$('ab-net').href = `${gh}/issues/new?template=reseau.yml`;
+$('ab-repo').href = gh;
+$('btn-about').addEventListener('click', () => {
+  $('home').hidden = true;
+  $('about').hidden = false;
+});
+$('ab-back').addEventListener('click', () => {
+  $('about').hidden = true;
+  $('home').hidden = false;
+});
+
 /* ---------- Navigation libre (poids lourd / bus) ---------- */
 
-free = initFree({ map, ask, toast, keepAwake, speedLimit, setMe, centerOffset, app, fmtDist, fmtTime, getTheme: () => theme });
+free = initFree({ map, ask, toast, keepAwake, speedLimit, setMe, camera, app, fmtDist, fmtTime, getTheme: () => theme, demo: DEMO ? locator : null, net: DEMO ? demoNet : {} });
 
 /* ---------- Démarrage ---------- */
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator && !DEMO) navigator.serviceWorker.register('sw.js').catch(() => {});
 setGate({ status: 'pending' });
 locator.start();
 loadIndex();

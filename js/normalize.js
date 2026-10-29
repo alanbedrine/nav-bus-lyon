@@ -1,7 +1,7 @@
 // Transforme les données TCL (tracés des lignes de bus + points d'arrêt, open data Grand Lyon)
 // en fichiers compacts pour l'appli. Sans DOM : utilisé par scripts/fetch-data.mjs et les tests.
 
-import { simplify, haversine } from './geo.js';
+import { simplify, haversine, makeProjector, pointSegment, pathLength } from './geo.js';
 import { Route } from './nav.js';
 
 /** Familles à exclure si le champ « famille » est absent (métro, funiculaire, tram, Rhônexpress). */
@@ -35,12 +35,37 @@ export function parseColor(v) {
   return null;
 }
 
-/** Chaîne les morceaux d'une MultiLineString ([lon, lat]) en une seule polyligne [lat, lon]. */
-export function chainParts(parts) {
-  const ps = parts.filter((p) => p && p.length > 1).map((p) => p.map(([lon, lat]) => [lat, lon]));
+/** Un morceau est « redondant » s'il longe déjà le tracé (antenne, doublon) ou s'il boucle sur lui-même (retournement). */
+export function isRedundant(part, chain, tol = 30) {
+  if (haversine(part[0], part.at(-1)) < 50) return true; // boucle fermée
+  const pr = makeProjector(chain[0]);
+  const xy = chain.map(([la, lo]) => pr.toXY(la, lo));
+  let near = 0;
+  for (const [la, lo] of part) {
+    const [x, y] = pr.toXY(la, lo);
+    let ok = false;
+    for (let i = 1; i < xy.length && !ok; i++) ok = pointSegment(x, y, xy[i - 1][0], xy[i - 1][1], xy[i][0], xy[i][1]).dist <= tol;
+    if (ok) near++;
+  }
+  return near / part.length >= 0.6;
+}
+
+/**
+ * Chaîne les morceaux d'une MultiLineString ([lon, lat]) en une seule polyligne [lat, lon].
+ * On part du plus long morceau, on rattache de proche en proche les morceaux par leurs extrémités, et on écarte
+ * les boucles de retournement et les antennes qui longent déjà le tracé (elles créaient des allers-retours
+ * parasites, ex. ligne 106 vers Gare d'Oullins).
+ */
+export function chainParts(parts, stats = null) {
+  let ps = parts.filter((p) => p && p.length > 1).map((p) => p.map(([lon, lat]) => [lat, lon]));
   if (!ps.length) return [];
+  ps.sort((a, b) => b.length - a.length);
   let chain = ps.shift();
   while (ps.length) {
+    const before = ps.length;
+    ps = ps.filter((p) => !isRedundant(p, chain));
+    if (stats) stats.droppedParts = (stats.droppedParts ?? 0) + (before - ps.length);
+    if (!ps.length) break;
     const head = chain[0];
     const tail = chain[chain.length - 1];
     let best = null;
@@ -54,6 +79,11 @@ export function chainParts(parts) {
       for (const c of cands) if (!best || c.d < best.d) best = c;
     });
     const [part] = ps.splice(best.i, 1);
+    // Petit morceau isolé (antenne, bout de boucle) : le rattacher créerait un saut parasite
+    if (best.d > 250 && pathLength(part) < 600) {
+      if (stats) stats.droppedParts = (stats.droppedParts ?? 0) + 1;
+      continue;
+    }
     const seg = best.rev ? part.slice().reverse() : part;
     if (best.where === 'tail') {
       chain = chain.concat(best.d < 0.5 ? seg.slice(1) : seg); // évite de dupliquer le point de jonction
@@ -62,6 +92,15 @@ export function chainParts(parts) {
     }
   }
   return chain;
+}
+
+/** « 106. » + trace « 106E-1 » -> « 106E » ; sinon retire la ponctuation finale. */
+export function cleanLineId(id, codeTrace) {
+  const base = String(id).trim();
+  if (!/[^A-Za-z0-9]$/.test(base)) return base;
+  const stripped = base.replace(/[^A-Za-z0-9]+$/, '');
+  const m = String(codeTrace ?? '').match(/^(.*?)-\d+$/);
+  return m && /^[A-Za-z0-9]+$/.test(m[1]) && m[1].startsWith(stripped) ? m[1] : stripped;
 }
 
 const ymd = (s) => (s ? String(s).replace(/\D/g, '').slice(0, 8) : '');
@@ -143,7 +182,8 @@ export function normalize(linesFC, stopsFC = null, opts = {}) {
 
   for (const f of linesFC.features ?? []) {
     const p = f.properties ?? {};
-    const id = pick(p, ['ligne', 'code_ligne', 'nom_ligne', 'numero']);
+    const rawId = pick(p, ['ligne', 'code_ligne', 'nom_ligne', 'numero']);
+    const id = rawId ? cleanLineId(rawId, pick(p, ['code_trace'])) : rawId;
     const family = pick(p, ['famille_tr', 'famille_transport', 'famille']);
     if (!id || (family ? family.toUpperCase() !== 'BUS' : isExcludedLine(id))) {
       stats.skipped++;
@@ -156,7 +196,7 @@ export function normalize(linesFC, stopsFC = null, opts = {}) {
 
     const g = f.geometry;
     const parts = g?.type === 'MultiLineString' ? g.coordinates : g?.type === 'LineString' ? [g.coordinates] : [];
-    const raw = chainParts(parts);
+    const raw = chainParts(parts, stats);
     if (raw.length < 2) { stats.noGeometry++; continue; }
 
     const traceName = pick(p, ['nom_trace', 'libelle', 'nom']);
@@ -169,7 +209,7 @@ export function normalize(linesFC, stopsFC = null, opts = {}) {
     const typeName = pick(p, ['nom_type_l', 'nom_type_ligne']) ?? '';
     const coords = simplify(raw, 2).map(([a, b]) => [Math.round(a * 1e5) / 1e5, Math.round(b * 1e5) / 1e5]);
 
-    if (!byLine.has(id)) byLine.set(id, { id, color: null, scolaire: false, variants: [] });
+    if (!byLine.has(id)) byLine.set(id, { id, stopKey: String(rawId).trim(), color: null, scolaire: false, variants: [] });
     const line = byLine.get(id);
     line.color = line.color ?? parseColor(pick(p, ['couleur_he', 'couleur_hex', 'couleur', 'colour']));
     if (/^JD/i.test(id) || /scolaire/i.test(typeName)) line.scolaire = true;
@@ -190,7 +230,7 @@ export function normalize(linesFC, stopsFC = null, opts = {}) {
     // variantes « nominales » d'abord
     line.variants.sort((a, b) => Number(!!a.tag) - Number(!!b.tag) || a.key.localeCompare(b.key, 'fr', { numeric: true }));
     for (const v of line.variants) {
-      v.stops = stopsForVariant(line.id, v, stopIndex);
+      v.stops = stopsForVariant(line.stopKey ?? line.id, v, stopIndex);
       if (v.stops.length) withStops++;
     }
     const terminus = [...new Set(line.variants.flatMap((v) => [v.origin, v.destination]))].filter((t) => t && t !== '?').slice(0, 8);

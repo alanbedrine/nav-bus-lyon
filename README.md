@@ -1,5 +1,7 @@
 # nav Lyon bus
 
+> Application **libre et gratuite**, non officielle, développée par des conducteurs et exploitée par [Unidrine](https://unidrine.fr). Le code est public : [téléchargez-le](../../archive/refs/heads/main.zip), [signalez un bug](../../issues/new/choose) ou [contribuez](CONTRIBUTING.md) (corrections, nouveaux réseaux de transport…). Licence [MIT](LICENSE).
+
 Navigation « suivi de ligne » pour les bus TCL (Lyon), en PWA mobile. Rouge et noir.
 
 - Toutes les lignes de bus TCL, **scolaires JD comprises** (hors métro, tramway et funiculaire), aux couleurs des lignes, sans compte. Filtre Toutes / Lignes / Scolaires.
@@ -11,9 +13,17 @@ Navigation « suivi de ligne » pour les bus TCL (Lyon), en PWA mobile. Rouge et
 - Vitesse actuelle (GPS) et limitation de vitesse (OpenStreetMap), écran maintenu allumé (Wake Lock).
 - Installable (manifest + service worker) : « Ajouter à l'écran d'accueil ».
 - **Reprise** : un cookie technique de 3 h (`navlb_session`, ligne + sens, prolongé pendant la navigation, effacé à « Terminer ») relance la navigation si l'on ferme puis rouvre l'appli.
+- **Carte façon Waze** : mode suivi (la carte tourne, la flèche pointe vers le haut, zoom serré qui s'adapte à la vitesse), mode nord en haut, ou carte libre (on la déplace ; un bouton recentre).
+- **Menus extensibles** : glisser la poignée pour agrandir jusqu'en haut ou réduire (aussi un simple toucher).
+- Bandeau de navigation : **prochains arrêts en grand**, terminus en petit, et vue « Ligne » pour voir où l'on en est sur la ligne.
+- **Vitesse filtrée** : pas de micro-déplacements à l'arrêt (vitesse 0 sous 2,5 km/h, position figée).
 - **Thème clair / sombre** (boutons dans l'accueil et en navigation, mémorisé), fond de carte assorti.
 - **Mobiles et tablettes uniquement** : sur PC, une page explicative remplace l'appli (`js/guard.js`, agent utilisateur + taille d'écran).
 - **Aucun robot, aucun référencement** (`.htaccess`, `robots.txt`, `noindex`).
+
+## Essayer sans bouger (mode démo)
+
+Ajoutez `?demo` à l'adresse (ex. `http://localhost:8080/?demo`) : un GPS simulé roule le long de la ligne ou de l'itinéraire choisi, avec une barre pour mettre en pause, changer la vitesse ou « sortir du tracé ». Fonctionne aussi sur PC. En navigation libre, les adresses et l'itinéraire sont **simulés** (aucun service externe appelé).
 
 ## Démarrage
 
@@ -25,7 +35,7 @@ npm run serve          # http://localhost:8080
 ```
 
 L'appli est 100 % statique (aucun build). La géolocalisation exige **HTTPS** (ou `localhost`) :
-déployez le dossier sur Cloudflare Pages, Netlify, Vercel, etc. (GitHub Pages sur dépôt privé demande un compte payant).
+déployez le dossier sur Cloudflare Pages, Netlify, Vercel, etc. (GitHub Pages fonctionne aussi, le dépôt étant public).
 
 ## Hébergement (Apache mutualisé, ex. Infomaniak)
 
@@ -38,7 +48,7 @@ Activez le **HTTPS** (certificat gratuit chez l'hébergeur) : la géolocalisatio
 Protection (`.htaccess` + `robots.txt`) :
 - les robots et outils automatiques (agent utilisateur vide ou connu : moteurs de recherche, IA, outils de téléchargement) reçoivent un 403 ;
 - `robots.txt` interdit tout, robots d'IA compris ; `index.html` porte `noindex, nofollow` et chaque réponse `X-Robots-Tag: noindex…` ;
-- en-têtes de sécurité (`nosniff`, `no-referrer`, géolocalisation limitée au site).
+- en-têtes de sécurité (`nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` — nécessaire pour les tuiles OpenStreetMap —, géolocalisation limitée au site).
 
 Limites : `robots.txt` n'est respecté que par les robots honnêtes, et un robot qui se fait passer pour un navigateur n'est pas détecté ; ne partagez pas l'adresse publiquement.
 Il n'y a **pas de restriction par pays**.
@@ -63,7 +73,9 @@ et écrit un fichier par ligne (`data/routes/`) plus `data/index.json`. Les coul
 Contenu : 789 lignes, dont 591 scolaires (JD), 1 775 tracés. Les lignes JD n'ont pas de terminus renseigné :
 ils sont déduits du nom du tracé (« 345101 ST-APPOLINAIRE>AMPLEPUIS »). Les lignes « BR… » sont les bus relais (métro, tram, funiculaire en panne).
 
-Le workflow `.github/workflows/update-data.yml` régénère et commit les données chaque mois (ou à la demande), sans rien exécuter chez vous.
+Le workflow `.github/workflows/update-data.yml` régénère les données chaque mois (ou à la demande) et ouvre une Pull Request à relire avant fusion, sans rien exécuter chez vous.
+
+Les tracés TCL contiennent parfois des boucles de retournement et des antennes (une ligne = plusieurs morceaux) : `chainParts` garde le tracé principal et écarte ces morceaux parasites. Un identifiant de ligne terminé par un point (ex. `106.`) est remplacé par le code du tracé (`106E`).
 
 ## Fonctionnement de la navigation
 
@@ -105,4 +117,21 @@ Modifiez `js/config.js` pour changer d'API :
 - iOS Safari : le Wake Lock n'est fiable qu'à partir d'iOS 16.4 / 18.4 en mode « écran d'accueil ».
 - Après modification du code, incrémentez `VERSION` dans `sw.js` pour invalider le cache.
 
-Fonds de carte © OpenStreetMap © CARTO. Données lignes : TCL / SYTRAL Mobilités, Grand Lyon (open data).
+Fond de carte © contributeurs OpenStreetMap (tuiles configurables dans `js/config.js`). Données lignes : TCL / SYTRAL Mobilités, Grand Lyon (open data).
+
+## Contribuer, signaler un bug
+
+- Bug ou idée : [Issues](../../issues/new/choose) (ou le bouton ⓘ « À propos » dans l'appli, qui ouvre le bon formulaire). Pas d'information personnelle : les tickets sont publics.
+- Code : voir [CONTRIBUTING.md](CONTRIBUTING.md). Les Pull Requests sont relues et validées par les mainteneurs avant publication.
+- Nouveau réseau de transport : [docs/AJOUTER_UN_RESEAU.md](docs/AJOUTER_UN_RESEAU.md).
+- Mise en place du dépôt (pour les mainteneurs) : [docs/GITHUB.md](docs/GITHUB.md).
+
+## Fond de carte
+
+Par défaut, tuiles standard d'OpenStreetMap, **sans clé**, assombries par un filtre CSS en thème sombre. Leur [politique d'usage](https://operations.osmfoundation.org/policies/tiles/)
+est « interactif raisonnable, sans garantie » : l'appli ne précharge rien et garde les tuiles vues 7 jours. Si l'audience grandit,
+changez `tileUrl` dans `js/config.js` pour un fournisseur dédié (MapTiler, Stadia, Thunderforest… avec une clé gratuite) ou vos propres tuiles.
+
+## Licence
+
+Code sous licence [MIT](LICENSE). Les données gardent leur licence : voir [NOTICE.md](NOTICE.md).

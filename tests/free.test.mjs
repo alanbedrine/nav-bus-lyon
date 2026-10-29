@@ -170,7 +170,7 @@ test('polyligne : décodage précision 5 et 6', () => {
 test('gabarits : camion et bus', () => {
   const t = truckDefaults(26);
   assert.equal(t.weight, 26);
-  const truck = buildRouteRequest({ lat: 1, lon: 2 }, { lat: 3, lon: 4 }, { ...DEFAULT_VEHICLE, hazmat: true });
+  const truck = buildRouteRequest({ lat: 1, lon: 2 }, { lat: 3, lon: 4 }, { ...DEFAULT_VEHICLE, kind: 'truck', hazmat: true });
   assert.equal(truck.costing, 'truck');
   assert.equal(truck.costing_options.truck.hazmat, true);
   assert.equal(truck.directions_options.language, 'fr-FR');
@@ -222,4 +222,53 @@ test('appels réseau simulés : géocodage et itinéraire', async () => {
   assert.equal(r.coords.length, 3);
   await assert.rejects(fetchRoute({ lat: 1, lon: 1 }, { lat: 2, lon: 2 }, DEFAULT_VEHICLE, { fetchImpl: async () => { throw new TypeError('Failed to fetch'); } }), /injoignable/);
   await assert.rejects(fetchRoute({ lat: 1, lon: 1 }, { lat: 2, lon: 2 }, DEFAULT_VEHICLE, { fetchImpl: async () => ({ ok: false, status: 400, json: async () => ({ error_code: 442, error: 'No path could be found' }) }) }), /gabarit/);
+});
+
+/* ---------- Filtre de mouvement GPS ---------- */
+import { MotionFilter } from '../js/services.js';
+import { chainParts, cleanLineId } from '../js/normalize.js';
+
+test('GPS à l’arrêt : la dérive ne donne ni vitesse ni déplacement', () => {
+  const f = new MotionFilter();
+  let last;
+  for (let i = 0; i < 60; i++) {
+    // dérive de ±4 m, vitesse « Doppler » bruitée à 1 m/s
+    last = f.push({ lat: 45.76 + Math.sin(i) * 0.00003, lon: 4.83 + Math.cos(i * 2) * 0.00003, accuracy: 12, speed: 0.4 + (i % 3) * 0.3, t: i * 1000 });
+  }
+  assert.equal(last.speedKmh, 0);
+  assert.equal(last.stationary, true);
+  assert.equal(last.heading, null);
+});
+
+test('GPS sans vitesse capteur : vitesse calculée, puis arrêt', () => {
+  const f = new MotionFilter();
+  let last;
+  for (let i = 0; i < 20; i++) last = f.push({ lat: 45.76 + i * 0.00014, lon: 4.83, accuracy: 6, speed: null, t: i * 1000 }); // ~15,5 m/s
+  assert.ok(last.speedKmh > 45 && last.speedKmh < 65, `vitesse ${last.speedKmh}`);
+  for (let i = 20; i < 35; i++) last = f.push({ lat: 45.76 + 20 * 0.00014, lon: 4.83, accuracy: 6, speed: null, t: i * 1000 });
+  assert.equal(last.speedKmh, 0);
+});
+
+test('mauvais fix (précision > 80 m) ignoré', () => {
+  const f = new MotionFilter();
+  for (let i = 0; i < 5; i++) f.push({ lat: 45.76 + i * 0.0001, lon: 4.83, accuracy: 5, speed: 10, heading: 0, t: i * 1000 });
+  const bad = f.push({ lat: 45.9, lon: 4.9, accuracy: 300, speed: 40, t: 6000 });
+  assert.ok(Math.abs(bad.lat - 45.7604) < 0.001);
+  assert.ok(bad.speedKmh > 20 && bad.speedKmh < 40);
+});
+
+/* ---------- Tracés : boucles / antennes (ligne 106) ---------- */
+
+test('chaînage : boucle fermée et antenne isolée écartées, identifiant « 106. » corrigé', () => {
+  const lonlat = (lat, lon) => [lon, lat];
+  const main = Array.from({ length: 40 }, (_, i) => lonlat(45.74 + i * 0.001, 4.80 + i * 0.0003));
+  const loop = Array.from({ length: 9 }, (_, i) => lonlat(45.7625 + 0.0004 * Math.sin((i / 8) * 2 * Math.PI), 4.8118 + 0.0004 * Math.cos((i / 8) * 2 * Math.PI)));
+  loop.push(loop[0]);
+  const spur = [lonlat(45.7625, 4.8118), lonlat(45.7645, 4.8135)]; // ~270 m, loin des extrémités
+  const chain = chainParts([loop, spur, main]);
+  assert.equal(chain.length, main.length);
+  assert.equal(chain[0][0], 45.74);
+  assert.equal(cleanLineId('106.', '106E-1'), '106E');
+  assert.equal(cleanLineId('106', '106-3'), '106');
+  assert.equal(cleanLineId('12.', 'xx'), '12');
 });

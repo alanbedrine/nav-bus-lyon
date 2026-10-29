@@ -29,7 +29,8 @@ export function truckDefaults(ptac) {
   return { ...t, weight: ptac, axle: Math.min(12, Math.max(1.8, Math.round(ptac * 0.45 * 10) / 10)) };
 }
 
-export const DEFAULT_VEHICLE = { kind: 'truck', busPreset: 'standard', ...truckDefaults(19), hazmat: false, avoidTolls: false };
+// Par défaut : autocar (les utilisateurs sont des conducteurs de bus/car). Modifiable dans « Mon véhicule ».
+export const DEFAULT_VEHICLE = { kind: 'bus', busPreset: 'autocar', ...BUS_PRESETS.autocar, axle: 10, hazmat: false, avoidTolls: false };
 
 export function vehicleTitle(v) {
   return v.kind === 'bus' ? `Bus / autocar · ${fmt(v.weight)} t` : `Camion · ${fmt(v.weight)} t`;

@@ -1,0 +1,10 @@
+name: Proposer une amélioration
+description: Une idée de fonctionnalité
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idee
+    attributes:
+      label: Votre idée
+      description: Quel problème cela résout-il pour un conducteur ?
+    validations: { required: true }

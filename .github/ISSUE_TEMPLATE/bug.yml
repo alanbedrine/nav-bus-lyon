@@ -1,0 +1,32 @@
+name: Signaler un bug
+description: Quelque chose ne fonctionne pas comme prévu
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Ne mettez aucune information personnelle : ce ticket est public."
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Où ?
+      options: [Navigation ligne TCL, Navigation libre poids lourd / bus, Temps de conduite RSE/RSN, Carte / GPS / vitesse, Autre]
+    validations: { required: true }
+  - type: input
+    id: ligne
+    attributes:
+      label: Ligne ou adresse concernée
+      placeholder: "106 vers Gare d'Oullins"
+  - type: textarea
+    id: quoi
+    attributes:
+      label: Que s'est-il passé ? Que deviez-vous voir ?
+    validations: { required: true }
+  - type: input
+    id: appareil
+    attributes:
+      label: Téléphone et navigateur
+      placeholder: "Pixel 7, Chrome 130 (appli installée ou non)"
+  - type: textarea
+    id: capture
+    attributes:
+      label: Captures d'écran (facultatif)

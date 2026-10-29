@@ -1,0 +1,24 @@
+name: Nouveau réseau de transport
+description: Demander ou proposer l'ajout d'un autre réseau
+labels: [réseau]
+body:
+  - type: input
+    id: reseau
+    attributes:
+      label: Nom du réseau et ville
+    validations: { required: true }
+  - type: input
+    id: donnees
+    attributes:
+      label: Lien des données ouvertes (GTFS, shapefile, GeoJSON…)
+    validations: { required: true }
+  - type: input
+    id: licence
+    attributes:
+      label: Licence des données
+  - type: checkboxes
+    id: aide
+    attributes:
+      label: Participation
+      options:
+        - label: Je peux proposer une Pull Request (voir docs/AJOUTER_UN_RESEAU.md)

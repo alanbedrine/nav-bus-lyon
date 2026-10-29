@@ -34,7 +34,7 @@ function save(key, value) {
 }
 
 export function initFree(ctx) {
-  const { map, ask, toast, keepAwake, speedLimit, setMe, centerOffset, app, fmtDist, fmtTime, getTheme } = ctx;
+  const { map, ask, toast, keepAwake, speedLimit, setMe, camera, app, fmtDist, fmtTime, getTheme, demo = null, net = {} } = ctx;
   const layers = L.layerGroup().addTo(map);
 
   const state = {
@@ -189,7 +189,7 @@ export function initFree(ctx) {
     searchAbort = new AbortController();
     $('fq-status').textContent = 'Recherche…';
     try {
-      const res = await geocode(q, { near: app.fix ? { lat: app.fix.lat, lon: app.fix.lon } : null, signal: searchAbort.signal });
+      const res = await geocode(q, { near: app.fix ? { lat: app.fix.lat, lon: app.fix.lon } : null, signal: searchAbort.signal, fetchImpl: net.fetch });
       $('fq-status').textContent = res.length ? '' : 'Aucune adresse trouvée';
       $('fres').replaceChildren(
         ...res.map((r) => {
@@ -216,7 +216,7 @@ export function initFree(ctx) {
     document.activeElement?.blur?.();
     toast('Calcul de l’itinéraire adapté à votre véhicule…', 20000);
     try {
-      const data = await fetchRoute({ lat: app.fix.lat, lon: app.fix.lon }, dest, state.vehicle);
+      const data = await fetchRoute({ lat: app.fix.lat, lon: app.fix.lon }, dest, state.vehicle, { fetchImpl: net.fetch });
       $('toast').hidden = true;
       state.dest = dest;
       state.plan = data;
@@ -288,7 +288,7 @@ export function initFree(ctx) {
 
   function start() {
     const g = mkNav(state.plan);
-    state.nav = { ...g, follow: true, avgKmh: 45, offSince: null, rerouting: false, lastTry: 0 };
+    state.nav = { ...g, avgKmh: 45, offSince: null, rerouting: false, lastTry: 0 };
     state.active = true;
     $('route-prev').hidden = true;
     $('fnav').hidden = false;
@@ -298,7 +298,8 @@ export function initFree(ctx) {
     keepAwake.enable().then((ok) => {
       if (!ok) toast('Écran : impossible de le garder allumé sur ce navigateur');
     });
-    map.setZoom(Math.max(map.getZoom(), 16), { animate: false });
+    camera.start('follow');
+    demo?.follow(state.plan.coords);
     refreshDriveUi(true);
     if (app.fix) onFix(app.fix);
   }
@@ -318,6 +319,8 @@ export function initFree(ctx) {
     state.active = false;
     state.nav = null;
     layers.clearLayers();
+    camera.stop();
+    demo?.halt();
     await keepAwake.disable();
     $('fnav').hidden = true;
     $('fn-limit').hidden = true;
@@ -337,7 +340,6 @@ export function initFree(ctx) {
     const moving = fix.speedKmh !== null && fix.speedKmh > 3;
     const heading = moving && fix.heading !== null ? fix.heading : s.state === 'off' ? undefined : s.heading;
     const pos = s.state === 'off' ? [fix.lat, fix.lon] : s.snapped;
-    setMe(pos[0], pos[1], heading ?? null);
 
     const { done, todo } = n.route.split(s.along);
     n.layers.done.setLatLngs(done);
@@ -388,10 +390,8 @@ export function initFree(ctx) {
       }
     });
 
-    if (n.follow) {
-      const z = map.getZoom();
-      map.setView(centerOffset(L.latLng(pos), z), z, { animate: true, duration: 0.8 });
-    }
+    camera.update(L.latLng(pos), s.state === 'off' ? fix.heading : s.heading, fix.speedKmh);
+    setMe(pos[0], pos[1], heading ?? null);
   }
 
   async function reroute(fix) {
@@ -400,11 +400,12 @@ export function initFree(ctx) {
     n.lastTry = Date.now();
     $('fn-banner-title').textContent = 'Recalcul de l’itinéraire…';
     try {
-      const plan = await fetchRoute({ lat: fix.lat, lon: fix.lon }, state.dest, state.vehicle);
+      const plan = await fetchRoute({ lat: fix.lat, lon: fix.lon }, state.dest, state.vehicle, { fetchImpl: net.fetch });
       if (state.nav !== n) return;
       state.plan = plan;
       Object.assign(n, mkNav(plan), { offSince: null });
       drawRoute();
+      demo?.follow(plan.coords, true);
       $('fn-banner').hidden = true;
       toast('Nouvel itinéraire calculé');
     } catch {
@@ -419,11 +420,9 @@ export function initFree(ctx) {
 
   $('fn-recenter').addEventListener('click', () => {
     if (!state.nav) return;
-    state.nav.follow = true;
+    if (camera.mode === 'free') camera.recenter();
+    else camera.cycle();
     if (app.fix) onFix(app.fix);
-  });
-  map.on('dragstart', () => {
-    if (state.nav) state.nav.follow = false;
   });
   $('fn-end').addEventListener('click', async () => {
     if (await ask({ title: 'Terminer la navigation ?', text: 'Le guidage vers cette destination sera arrêté.', ok: 'Terminer' })) end();

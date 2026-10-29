@@ -1,5 +1,5 @@
 // Service worker nav Lyon bus : coquille de l'appli hors ligne, données lignes et tuiles en cache.
-const VERSION = 'nav-lyon-bus-v6';
+const VERSION = 'nav-lyon-bus-v7';
 const SHELL = [
   './',
   'index.html',
@@ -15,6 +15,8 @@ const SHELL = [
   'js/routing.js',
   'js/drivetime.js',
   'js/config.js',
+  'js/camera.js',
+  'js/sheet.js',
   'vendor/leaflet/leaflet.js',
   'vendor/leaflet/leaflet.css',
   'icons/icon-192.png',
@@ -48,18 +50,21 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
 
-  // Tuiles de carte : cache d'abord, rafraîchi en arrière-plan
-  if (url.hostname.endsWith('basemaps.cartocdn.com')) {
+  // Tuiles de carte : on réutilise celles déjà vues pendant 7 jours (respect de la politique d'OpenStreetMap :
+  // pas de préchargement, pas de requêtes inutiles). Hors ligne, on sert ce qui est en cache.
+  if (/\/\d{1,2}\/\d+\/\d+(@2x)?\.(png|jpg|jpeg|webp)$/.test(url.pathname)) {
     e.respondWith(
       caches.open(TILES).then(async (cache) => {
         const hit = await cache.match(req);
-        const net = fetch(req)
-          .then((res) => {
-            if (res.ok || res.type === 'opaque') cache.put(req, res.clone()).then(() => trim(TILES, MAX_TILES));
-            return res;
-          })
-          .catch(() => hit);
-        return hit || net;
+        const age = !hit ? Infinity : hit.type === 'opaque' ? 0 : Date.now() - new Date(hit.headers.get('date') || Date.now()).getTime();
+        if (hit && age < 7 * 24 * 3600 * 1000) return hit;
+        try {
+          const res = await fetch(req);
+          if (res.ok || res.type === 'opaque') cache.put(req, res.clone()).then(() => trim(TILES, MAX_TILES));
+          return res;
+        } catch {
+          return hit ?? Response.error();
+        }
       }),
     );
     return;

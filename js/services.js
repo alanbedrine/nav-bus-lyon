@@ -2,6 +2,84 @@
 
 import { haversine, makeProjector, pointSegment } from './geo.js';
 
+/* ---------- Filtre de mouvement : vitesse fiable, pas de micro-déplacements ---------- */
+
+/**
+ * Le GPS « bouge » même à l'arrêt (dérive de quelques mètres) : sans filtre on affichait 3-8 km/h et la flèche tremblait.
+ *  - vitesse du capteur (Doppler) si elle existe, sinon calculée sur ≥ 2 s et au-delà de l'incertitude du GPS ;
+ *  - sous 2,5 km/h, on considère le véhicule à l'arrêt : vitesse 0 et position figée ;
+ *  - lissage léger, puis cap ignoré en dessous de 4 km/h (il est faux à basse vitesse).
+ */
+export class MotionFilter {
+  constructor() {
+    this.anchor = null; // dernier point réellement « validé » {lat, lon}
+    this.win = []; // positions brutes des ~6 dernières secondes
+    this.kmh = 0;
+    this.zeros = 0;
+    this.outliers = 0;
+    this.lastHeading = null;
+  }
+
+  push({ lat, lon, accuracy = 10, speed = null, heading = null, t }) {
+    this.win.push({ lat, lon, t });
+    while (this.win.length > 2 && t - this.win[0].t > 6000) this.win.shift();
+    if (!this.anchor) {
+      this.anchor = { lat, lon };
+      return { lat, lon, speedKmh: speed !== null ? this._clean(speed * 3.6) : 0, heading: null, stationary: speed === null || speed * 3.6 < 2.5 };
+    }
+    const a = this.anchor;
+    if (accuracy > 80) {
+      // fix trop imprécis : on garde l'état précédent
+      return { lat: a.lat, lon: a.lon, speedKmh: this.kmh, heading: this.lastHeading, stationary: this.kmh === 0, poor: true };
+    }
+    const noise = Math.max(8, 1.5 * accuracy);
+    const distAnchor = haversine([a.lat, a.lon], [lat, lon]);
+    let v = 0; // m/s
+    if (speed !== null && Number.isFinite(speed)) {
+      v = speed;
+      if (distAnchor < noise * 0.5 && v < 1.5) v = 0; // le capteur invente un petit mouvement alors que la position n'a pas bougé
+    } else {
+      const w0 = this.win[0];
+      const dt = (t - w0.t) / 1000;
+      const d = haversine([w0.lat, w0.lon], [lat, lon]);
+      if (dt >= 2 && d > noise) v = d / dt;
+    }
+    let kmh = v * 3.6;
+    if (kmh > 220) {
+      // saut de position (reprise du GPS après un tunnel…) : ignoré, sauf s'il se répète (le véhicule a vraiment bougé)
+      if (++this.outliers < 3) return { lat: a.lat, lon: a.lon, speedKmh: this.kmh, heading: this.lastHeading, stationary: this.kmh === 0, poor: true };
+      this.outliers = 0;
+      this.anchor = { lat, lon };
+      this.win = [{ lat, lon, t }];
+      return { lat, lon, speedKmh: this.kmh, heading: this.lastHeading, stationary: this.kmh === 0 };
+    }
+    this.outliers = 0;
+    if (kmh < 2.5) kmh = 0;
+    // Lissage : montée progressive, arrêt confirmé sur 2 mesures
+    if (kmh === 0) {
+      this.zeros++;
+      this.kmh = this.zeros >= 2 ? 0 : this.kmh * 0.5;
+    } else {
+      this.zeros = 0;
+      this.kmh = this.kmh === 0 ? kmh : this.kmh * 0.4 + kmh * 0.6;
+    }
+    const moving = this.kmh >= 2.5;
+    if (moving) this.anchor = { lat, lon };
+    if (moving && heading !== null && Number.isFinite(heading) && this.kmh >= 4) this.lastHeading = heading;
+    return {
+      lat: moving ? lat : a.lat,
+      lon: moving ? lon : a.lon,
+      speedKmh: moving ? this.kmh : 0,
+      heading: moving ? this.lastHeading : null,
+      stationary: !moving,
+    };
+  }
+
+  _clean(kmh) {
+    return kmh < 2.5 ? 0 : kmh;
+  }
+}
+
 /* ---------- Géolocalisation ---------- */
 
 export class Locator {
@@ -11,7 +89,7 @@ export class Locator {
   constructor(cb) {
     this.cb = cb;
     this.watchId = null;
-    this.prev = null;
+    this.filter = new MotionFilter();
     this.hasFix = false;
   }
 
@@ -42,20 +120,23 @@ export class Locator {
   handle(pos) {
     const c = pos.coords;
     const t = pos.timestamp || Date.now();
-    let speed = Number.isFinite(c.speed) && c.speed !== null ? c.speed : null; // m/s
-    if (speed === null && this.prev) {
-      const dt = (t - this.prev.t) / 1000;
-      if (dt > 0.5) speed = haversine([this.prev.lat, this.prev.lon], [c.latitude, c.longitude]) / dt;
-    }
-    const fix = {
+    const m = this.filter.push({
       lat: c.latitude,
       lon: c.longitude,
-      accuracy: c.accuracy,
+      accuracy: Number.isFinite(c.accuracy) ? c.accuracy : 10,
+      speed: Number.isFinite(c.speed) && c.speed !== null ? c.speed : null,
       heading: Number.isFinite(c.heading) ? c.heading : null,
-      speedKmh: speed === null ? null : Math.max(0, speed * 3.6),
+      t,
+    });
+    const fix = {
+      lat: m.lat,
+      lon: m.lon,
+      accuracy: c.accuracy,
+      heading: m.heading,
+      speedKmh: m.speedKmh,
+      stationary: m.stationary,
       t,
     };
-    this.prev = { lat: fix.lat, lon: fix.lon, t };
     this.hasFix = true;
     this.cb.onStatus({ status: 'ok' });
     this.cb.onFix(fix);

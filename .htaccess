@@ -1,0 +1,25 @@
+# nav Lyon bus : toutes les requêtes passent par gate.php (robots refusés, France uniquement), sauf robots.txt.
+# Hébergement Apache mutualisé (Infomaniak) : mod_rewrite et PHP requis.
+
+Options -Indexes
+DirectoryIndex gate.php
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # robots.txt reste lisible directement
+  RewriteRule ^robots\.txt$ - [L]
+
+  # gate.php et le test s'exécutent tels quels ; tout le reste passe par gate.php
+  RewriteRule ^(gate|geo-test)\.php$ - [L]
+  RewriteRule ^ gate.php [L,QSA]
+</IfModule>
+
+# Jamais de listing ni de lecture directe des fichiers sensibles
+<FilesMatch "^(\.|package|composer)">
+  Require all denied
+</FilesMatch>
+
+<IfModule mod_headers.c>
+  Header always set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet, noimageindex"
+</IfModule>

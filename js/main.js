@@ -25,11 +25,40 @@ function badgeStyle(color) {
   const c = color || '#e30613';
   const n = parseInt(c.slice(1), 16);
   const lum = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
-  return `background:${c};color:${lum > 0.62 ? '#111' : '#fff'}`;
+  return `background:${c};color:${lum > 0.62 ? '#111' : '#fff'};box-shadow:inset 0 0 0 1px rgba(128,128,128,.4)`;
 }
 function badge(line, big = false) {
   const b = el('span', { class: 'badge' + (big ? ' big' : ''), style: badgeStyle(line.color) }, line.id);
   return b;
+}
+
+/** Couleur de la ligne pour le tracé, remplacée par le rouge si elle est illisible sur le fond de carte. */
+function routeColor(hex, th = theme) {
+  if (!hex) return '#e30613';
+  const n = parseInt(hex.slice(1), 16);
+  const lum = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  if (th === 'dark' && lum < 0.2) return '#e30613';
+  if (th === 'light' && lum > 0.7) return '#e30613';
+  return hex;
+}
+const destLabel = (v) => (v.destination && v.destination !== '?' ? v.destination : `Tracé ${v.key}`);
+
+/** Variante dans l'autre sens : tracé réel du fichier si on le trouve, sinon le même tracé parcouru à l'envers. */
+function oppositeVariant(variant, variants) {
+  if (variant.baseKey) return variants.find((v) => v.key === variant.baseKey) ?? null;
+  const swapped = variant.key.replace(/(\D)([12])$/, (_, a, d) => a + (d === '1' ? '2' : '1'));
+  const byNames = variants.filter((v) => v !== variant && v.origin === variant.destination && v.destination === variant.origin);
+  const real =
+    (swapped !== variant.key && variants.find((v) => v.key === swapped)) ||
+    byNames.find((v) => v.tag === variant.tag) ||
+    byNames[0];
+  return real ?? reversedVariant(variant);
+}
+function reversedVariant(v) {
+  return {
+    key: v.key + '~inv', baseKey: v.key, tag: v.tag, sens: '', origin: v.destination, destination: v.origin,
+    coords: v.coords.slice().reverse(), stops: (v.stops ?? []).slice().reverse(),
+  };
 }
 
 let toastTimer;
@@ -135,6 +164,7 @@ const app = {
   firstFix: false,
   line: null, // entrée de l'index
   routeData: null, // fichier de la ligne
+  filter: 'all',
   nav: null, // { variant, route, engine, follow, avgKmh, last }
 };
 applyTheme(theme);
@@ -154,7 +184,7 @@ function writeCookie(value, maxAge) {
 }
 function saveSession() {
   if (!app.nav || !app.line) return;
-  const v = { f: app.line.file, o: app.nav.variant.origin, d: app.nav.variant.destination };
+  const v = { f: app.line.file, k: app.nav.variant.key };
   writeCookie(encodeURIComponent(JSON.stringify(v)), SESSION_TTL_S);
   lastSessionSave = Date.now();
 }
@@ -180,11 +210,9 @@ async function resumeSession() {
     const res = await fetch(`data/routes/${entry.file}.json`);
     if (!res.ok) throw new Error(res.status);
     const data = await res.json();
-    const direct = data.variants.find((v) => v.origin === s.o && v.destination === s.d);
-    const inverse = data.variants.find((v) => v.origin === s.d && v.destination === s.o);
-    const variant =
-      direct ??
-      (inverse && { origin: s.o, destination: s.d, sens: '', key: 'inv', coords: inverse.coords.slice().reverse() });
+    const inv = String(s.k).endsWith('~inv');
+    const base = data.variants.find((v) => v.key === (inv ? s.k.slice(0, -4) : s.k));
+    const variant = base && (inv ? reversedVariant(base) : base);
     if (!variant) return clearSession();
     app.line = entry;
     app.routeData = data;
@@ -248,6 +276,7 @@ function renderLines() {
   const ul = $('lines');
   ul.replaceChildren();
   const lines = app.index.lines
+    .filter((l) => app.filter === 'all' || (app.filter === 'sco' ? l.scolaire : !l.scolaire))
     .map((l) => {
       if (!q) return { l, score: 0 };
       const id = fold(l.id);
@@ -258,6 +287,7 @@ function renderLines() {
     })
     .filter(Boolean)
     .sort((a, b) => b.score - a.score);
+  $('data-status').textContent = lines.length ? `${lines.length} ligne${lines.length > 1 ? 's' : ''}` : '';
   if (!lines.length) ul.append(el('li', { class: 'muted' }, 'Aucune ligne trouvée'));
   for (const { l } of lines) {
     ul.append(
@@ -268,7 +298,7 @@ function renderLines() {
           'button',
           { onclick: () => openLine(l) },
           badge(l),
-          el('span', { class: 'row-text' }, el('strong', {}, l.terminus.slice(0, 2).join(' ⇄ ') || `Ligne ${l.id}`), el('small', {}, l.terminus.length > 2 ? l.terminus.join(' · ') : 'Bus')),
+          el('span', { class: 'row-text' }, el('strong', {}, l.terminus.slice(0, 2).join(' ⇄ ') || `Ligne ${l.id}`), el('small', {}, l.scolaire ? 'Scolaire' : l.terminus.length > 2 ? l.terminus.join(' · ') : 'Bus')),
           el('span', { class: 'chev' }, '›'),
         ),
       ),
@@ -276,6 +306,13 @@ function renderLines() {
   }
 }
 $('q').addEventListener('input', renderLines);
+document.querySelectorAll('.chips .chip').forEach((b) =>
+  b.addEventListener('click', () => {
+    app.filter = b.dataset.f;
+    document.querySelectorAll('.chips .chip').forEach((x) => x.classList.toggle('on', x === b));
+    if (app.index) renderLines();
+  }),
+);
 
 async function openLine(entry) {
   try {
@@ -300,7 +337,8 @@ async function openLine(entry) {
         el(
           'button',
           { onclick: () => chooseDirection(v) },
-          el('span', { class: 'row-text' }, el('strong', {}, `Vers ${v.destination}`), el('small', {}, `depuis ${v.origin} · ${km.toFixed(1).replace('.', ',')} km`)),
+          el('span', { class: 'row-text' }, el('strong', {}, v.destination && v.destination !== '?' ? `Vers ${v.destination}` : destLabel(v)),
+            el('small', {}, `${v.origin && v.origin !== '?' && v.origin !== v.destination ? `depuis ${v.origin} · ` : ''}${v.tag ? `${v.tag} · ` : ''}${km.toFixed(1).replace('.', ',')} km${v.stops?.length ? ` · ${v.stops.length} arrêts` : ''}`)),
           el('span', { class: 'chev' }, '›'),
         ),
       ),
@@ -317,7 +355,7 @@ function showPreview(variants, highlight = null) {
   let bounds = null;
   for (const v of variants) {
     const on = highlight ? v === highlight : true;
-    const pl = L.polyline(v.coords, { color: '#e30613', weight: on ? 5 : 3, opacity: on ? 0.9 : 0.3 }).addTo(previewLayer);
+    const pl = L.polyline(v.coords, { color: routeColor(app.line?.color), weight: on ? 5 : 3, opacity: on ? 0.9 : 0.3 }).addTo(previewLayer);
     bounds = bounds ? bounds.extend(pl.getBounds()) : pl.getBounds();
   }
   if (bounds) map.fitBounds(bounds, { paddingTopLeft: [20, 20], paddingBottomRight: [20, window.innerHeight * 0.66] });
@@ -335,7 +373,7 @@ async function chooseDirection(variant) {
   showPreview(app.routeData.variants, variant);
   const ok = await ask({
     title: 'Lancer la navigation ?',
-    text: `Ligne ${app.line.id} vers ${variant.destination}`,
+    text: `Ligne ${app.line.id} vers ${destLabel(variant)}`,
     ok: 'Lancer',
   });
   if (ok) startNav(variant);
@@ -345,7 +383,7 @@ async function chooseDirection(variant) {
 
 function startNav(variant) {
   const route = new Route(variant.coords);
-  app.nav = { variant, route, engine: new NavEngine(route), follow: true, avgKmh: 18, layers: null };
+  app.nav = { variant, route, engine: new NavEngine(route), follow: true, avgKmh: 18, layers: null, stops: computeStops(variant, route) };
   previewLayer?.remove();
   previewLayer = null;
   drawRoute();
@@ -353,7 +391,7 @@ function startNav(variant) {
   $('home').hidden = true;
   $('nav').hidden = false;
   $('nav-badge').replaceWith(Object.assign(badge(app.line), { id: 'nav-badge' }));
-  $('nav-dest').textContent = variant.destination;
+  $('nav-dest').textContent = destLabel(variant);
   keepAwake.enable().then((ok) => {
     if (!ok) toast('Écran : impossible de le garder allumé sur ce navigateur');
   });
@@ -362,14 +400,30 @@ function startNav(variant) {
   if (app.fix) onFix(app.fix);
 }
 
+/** Arrêts de la variante, placés sur le tracé (abscisse curviligne) pour annoncer le prochain. */
+function computeStops(variant, route) {
+  return (variant.stops ?? [])
+    .map(([name, lat, lon, pmr]) => {
+      const [x, y] = route.proj.toXY(lat, lon);
+      return { name, pmr, latlng: [lat, lon], along: route.nearest(x, y).along };
+    })
+    .sort((a, b) => a.along - b.along);
+}
+
 function drawRoute() {
   routeLayers.clearLayers();
   const { route } = app.nav;
   const tc = THEME_COLORS[theme];
+  const col = routeColor(app.line?.color);
   const halo = L.polyline(route.coords, { color: tc.halo, weight: 12, opacity: 0.85, lineCap: 'round', lineJoin: 'round' }).addTo(routeLayers);
-  const done = L.polyline([], { color: tc.done, weight: 7, lineCap: 'round', lineJoin: 'round' }).addTo(routeLayers);
-  const todo = L.polyline(route.coords, { color: '#e30613', weight: 7, lineCap: 'round', lineJoin: 'round' }).addTo(routeLayers);
-  const end = L.circleMarker(route.coords.at(-1), { radius: 9, color: '#fff', weight: 3, fillColor: '#e30613', fillOpacity: 1 }).addTo(routeLayers);
+  const done = L.polyline([], { color: col, weight: 7, opacity: 0.3, lineCap: 'round', lineJoin: 'round' }).addTo(routeLayers);
+  const todo = L.polyline(route.coords, { color: col, weight: 7, lineCap: 'round', lineJoin: 'round' }).addTo(routeLayers);
+  for (const st of app.nav.stops) {
+    L.circleMarker(st.latlng, { radius: 5, color: col, weight: 3, fillColor: theme === 'dark' ? '#0b0b0c' : '#fff', fillOpacity: 1 })
+      .bindTooltip(st.name, { direction: 'top', offset: [0, -4] })
+      .addTo(routeLayers);
+  }
+  const end = L.circleMarker(route.coords.at(-1), { radius: 9, color: '#fff', weight: 3, fillColor: col, fillOpacity: 1 }).addTo(routeLayers);
   app.nav.layers = { halo, done, todo, end };
 }
 
@@ -387,14 +441,12 @@ async function endNav() {
 
 async function turnAround() {
   const { variant } = app.nav;
-  const opposite =
-    app.routeData.variants.find((v) => v.origin === variant.destination && v.destination === variant.origin) ??
-    { origin: variant.destination, destination: variant.origin, sens: '', key: 'inv', coords: variant.coords.slice().reverse() };
-  const ok = await ask({ title: 'Retournement', text: `Repartir vers ${opposite.destination} ?`, ok: 'Retourner' });
+  const opposite = oppositeVariant(variant, app.routeData.variants);
+  const ok = await ask({ title: 'Retournement', text: `Repartir vers ${destLabel(opposite)} ?`, ok: 'Retourner' });
   if (!ok) return;
   const route = new Route(opposite.coords);
-  Object.assign(app.nav, { variant: opposite, route, engine: new NavEngine(route), follow: true });
-  $('nav-dest').textContent = opposite.destination;
+  Object.assign(app.nav, { variant: opposite, route, engine: new NavEngine(route), follow: true, stops: computeStops(opposite, route) });
+  $('nav-dest').textContent = destLabel(opposite);
   $('arrived-banner').hidden = true;
   drawRoute();
   saveSession();
@@ -430,6 +482,8 @@ function onFix(fix) {
   const eta = new Date(Date.now() + (s.remaining / 1000 / Math.max(n.avgKmh, 12)) * 3600 * 1000);
   $('nav-eta').textContent = s.state === 'arrived' ? 'Arrivé' : `Arrivée ${fmtTime(eta)}`;
   $('nav-progress').style.width = `${Math.round(s.progress * 100)}%`;
+  const next = s.state === 'off' ? null : n.stops.find((st) => st.along > s.along + 15);
+  $('nav-next').textContent = s.state === 'arrived' ? 'Terminus' : next ? `${next.name} · ${fmtDist(next.along - s.along)}` : n.stops.length ? 'Dernier arrêt passé' : '';
 
   const off = s.state === 'off';
   $('off-banner').hidden = !off;

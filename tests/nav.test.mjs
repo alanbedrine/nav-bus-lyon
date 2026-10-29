@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Route, NavEngine } from '../js/nav.js';
-import { normalize, chainParts, isExcludedLine, parseColor } from '../js/normalize.js';
+import { normalize, chainParts, isExcludedLine, parseColor, namesFromTrace } from '../js/normalize.js';
 import { makeProjector } from '../js/geo.js';
 
 // Tracé synthétique : 1 km vers l'est, puis 1 km vers le nord (autour de Lyon Bellecour).
@@ -66,13 +66,13 @@ test('retournement : le tracé inversé démarre à la position courante', () =>
   assert.ok(s.along < 150);
 });
 
-test('normalisation : exclusion métro/tram/funiculaire, chaînage, couleur', () => {
-  assert.ok(['A', 'B', 'C', 'D', 'F1', 'F2', 'T1', 'T6', 'RX'].every(isExcludedLine));
-  assert.ok(!['C3', '4', 'S1', 'ZI3', 'N1'].some(isExcludedLine));
+test('normalisation : famille BUS, couleurs, scolaires JD, dates, arrêts', () => {
+  assert.ok(['A', 'B', 'D', 'F1', 'F2', 'T1', 'T6', 'RX'].every(isExcludedLine));
+  assert.ok(!['C1', 'C13', '4', '32', 'JD345', 'T36', 'TB11', 'N181'].some(isExcludedLine));
   assert.equal(parseColor('255 0 128'), '#ff0080');
   assert.equal(parseColor('#E30613'), '#e30613');
 
-  // 2 morceaux fournis dans le désordre d'orientation
+  // 2 morceaux fournis avec des orientations différentes
   const parts = [
     [[4.83, 45.75], [4.84, 45.75]],
     [[4.85, 45.75], [4.84, 45.75]],
@@ -80,18 +80,46 @@ test('normalisation : exclusion métro/tram/funiculaire, chaînage, couleur', ()
   const chain = chainParts(parts);
   assert.deepEqual(chain.map((c) => c[1]), [4.83, 4.84, 4.85]);
 
-  const fc = {
+  // nom des terminus déduit du nom du tracé (lignes scolaires sans origine/destination)
+  assert.deepEqual(namesFromTrace('345101 ST-APPOLINAIRE>AMPLEPUIS'), ['ST-APPOLINAIRE', 'AMPLEPUIS']);
+  assert.deepEqual(namesFromTrace('Mermoz - Pinel - Parilly Universite Hippodrome'), ['Mermoz', 'Parilly Universite Hippodrome']);
+
+  const f = (props, coordinates) => ({ properties: props, geometry: { type: 'LineString', coordinates } });
+  const line = [[4.83, 45.75], [4.835, 45.75], [4.84, 45.75], [4.845, 45.75], [4.85, 45.75]];
+  const linesFC = {
     features: [
-      { properties: { ligne: 'C3', sens: 'Aller', nom_origine: 'Part-Dieu', nom_destination: 'Vaise', couleur: '255 0 0' }, geometry: { type: 'MultiLineString', coordinates: parts } },
-      { properties: { ligne: 'C3', sens: 'Retour', nom_origine: 'Vaise', nom_destination: 'Part-Dieu' }, geometry: { type: 'LineString', coordinates: parts[0] } },
-      { properties: { ligne: 'T1', sens: 'Aller', nom_origine: 'x', nom_destination: 'y' }, geometry: { type: 'LineString', coordinates: parts[0] } },
+      f({ ligne: 'C3', code_trace: 'C3-1', sens: 'Aller', nom_origin: 'Part-Dieu', nom_destin: 'Vaise', famille_tr: 'BUS', couleur_he: '#E30613', date_debut: '20190909', date_fin: '' }, line),
+      f({ ligne: 'C3', code_trace: 'C3-2', sens: 'Retour', nom_origin: 'Vaise', nom_destin: 'Part-Dieu', famille_tr: 'BUS', couleur_he: '#E30613' }, line.slice().reverse()),
+      f({ ligne: 'JD345', code_trace: '345101 ST-APP>AMPLEPUIS', nom_trace: '345101 ST-APP>AMPLEPUIS', famille_tr: 'BUS', couleur_he: '#17297b' }, line),
+      f({ ligne: 'T1', famille_tr: 'TRAM', nom_origin: 'x', nom_destin: 'y' }, line), // hors bus
+      f({ ligne: '99', code_trace: '99-1', famille_tr: 'BUS', date_fin: '20200101' }, line), // expirée
+      f({ ligne: '98', code_trace: '98-1', famille_tr: 'BUS', date_debut: '20300101' }, line), // pas encore en service
     ],
   };
-  const { index, routes, stats } = normalize(fc);
-  assert.equal(stats.lines, 1);
+  const pt = (nom, lon, desserte) => ({ properties: { nom, desserte, pmr: true }, geometry: { type: 'Point', coordinates: [lon, 45.7501] } });
+  const stopsFC = {
+    features: [
+      pt('Milieu', 4.84, 'C3:A,C3:R'),
+      pt('Début', 4.8302, 'C3:A,JD345:A'),
+      pt('Autre ligne', 4.845, '77:A'),
+      pt('Loin', 4.84, 'C3:A'), // à 11 m du tracé : gardé ; modifié ci-dessous
+      { properties: { nom: 'Trop loin', desserte: 'C3:A' }, geometry: { type: 'Point', coordinates: [4.84, 45.76] } },
+    ],
+  };
+  const { index, routes, stats } = normalize(linesFC, stopsFC, { today: '20261029' });
+  assert.equal(stats.lines, 2);
+  assert.equal(stats.scolaires, 1);
+  assert.equal(stats.expired, 1);
+  assert.equal(stats.future, 1);
   assert.equal(index.lines[0].id, 'C3');
-  assert.equal(index.lines[0].color, '#ff0000');
-  assert.equal(routes.C3.variants.length, 2);
+  assert.equal(index.lines[0].color, '#e30613');
+  assert.equal(index.lines.find((l) => l.id === 'JD345').scolaire, true);
+  assert.equal(routes.JD345.variants[0].origin, 'ST-APP');
+  const aller = routes.C3.variants.find((v) => v.key === 'C3-1');
+  // arrêts de C3 sens Aller, dans l'ordre du tracé ; « Trop loin » et l'arrêt d'une autre ligne exclus
+  assert.deepEqual(aller.stops.map((x) => x[0]), ['Début', 'Milieu', 'Loin']);
+  const retour = routes.C3.variants.find((v) => v.key === 'C3-2');
+  assert.deepEqual(retour.stops.map((x) => x[0]), ['Milieu']);
 });
 
 import { isMobileOrTablet } from '../js/guard.js';

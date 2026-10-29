@@ -2,7 +2,8 @@
 
 Navigation « suivi de ligne » pour les bus TCL (Lyon), en PWA mobile. Rouge et noir.
 
-- Toutes les lignes TCL **hors métro, tramway et funiculaire** (bus, trolleybus…), sans compte.
+- Toutes les lignes de bus TCL, **scolaires JD comprises** (hors métro, tramway et funiculaire), aux couleurs des lignes, sans compte. Filtre Toutes / Lignes / Scolaires.
+- Arrêts de chaque ligne et **prochain arrêt** pendant la navigation.
 - Localisation **obligatoire** : sans elle, un écran bloque l'appli avec un bouton « Redemander la localisation ».
 - Recherche par numéro de ligne ou par terminus, choix du terminus de destination, confirmation, puis navigation.
 - Le tracé est **fixe** : aucun recalcul. Si le véhicule s'en écarte, la bannière **Délocalisé** s'affiche jusqu'au retour sur le tracé.
@@ -26,29 +27,62 @@ npm run serve          # http://localhost:8080
 L'appli est 100 % statique (aucun build). La géolocalisation exige **HTTPS** (ou `localhost`) :
 déployez le dossier sur Cloudflare Pages, Netlify, Vercel, etc. (GitHub Pages sur dépôt privé demande un compte payant).
 
-## Protection (France uniquement, anti-bots, non référencé)
+## Hébergement et protection (France uniquement, anti-bots, non référencé)
 
-Un site statique ne peut pas filtrer par pays : le filtre est dans `functions/_middleware.js` (**Cloudflare Pages Functions**).
-Il refuse (403) toute requête dont le pays n'est pas `FR`, tout agent utilisateur de robot ou vide, et ajoute `X-Robots-Tag: noindex…`.
-`robots.txt` interdit tout (y compris les robots d'IA), `index.html` porte `noindex, nofollow`, et `_headers` pose les en-têtes de sécurité.
+L'appli est statique ; la protection dépend de l'hébergeur.
 
-Déploiement : Cloudflare Pages, dossier racine du dépôt, aucune commande de build. Variable `ALLOW_ALL=1` pour désactiver le filtre en développement.
-Avec Cloudflare, vous pouvez aussi ajouter une règle WAF `ip.geoip.country ne "FR"` -> Bloquer, et activer le blocage des robots d'IA.
+### Option A — hébergement mutualisé Apache + PHP 8.1 ou plus (Infomaniak…)
 
-Limites : un VPN français contourne le filtre pays ; `robots.txt` n'est respecté que par les robots honnêtes (d'où le blocage par agent utilisateur) ;
-ne partagez pas l'adresse publiquement (un lien public suffit parfois à faire apparaître une URL dans un moteur de recherche).
+`.htaccess` envoie **toutes** les requêtes à `gate.php`, qui :
+1. refuse (403) les robots (agent utilisateur de robot ou vide) ;
+2. refuse (403) les adresses IP qui ne sont pas dans les plages **françaises** (`geo/fr-ranges.php`, tiré du registre public RIPE NCC) ;
+3. sert ensuite le fichier demandé (seuls `index.html`, `sw.js`, `manifest.webmanifest`, `robots.txt`, `css/ js/ vendor/ icons/ data/` sont accessibles ; `geo/`, `*.php`, `scripts/`, `tests/`… ne le sont jamais), avec `X-Robots-Tag: noindex` et cache `ETag`/`304`.
+
+`robots.txt` reste lisible directement (interdit tout, robots d'IA compris) et `index.html` porte `noindex, nofollow`.
+
+Mise en place :
+
+```bash
+npm run geo            # génère geo/fr-ranges.php (téléchargement RIPE NCC) — à relancer de temps en temps
+npm run data           # génère data/ (lignes + arrêts)
+```
+
+Puis envoyez par FTP/SFTP à la racine du site : `.htaccess`, `gate.php`, `geo-test.php`, `robots.txt`, `index.html`, `sw.js`, `manifest.webmanifest`, `css/`, `js/`, `vendor/`, `icons/`, `data/`, `geo/`.
+
+1. Ouvrez `https://votre-site/geo-test.php` **depuis votre téléphone en 4G/5G** : il affiche l'adresse IP vue par le serveur et « Reconnue en France : OUI ». Si l'IP affichée est celle d'un relais de l'hébergeur et non la vôtre, passez `trust_forwarded_for` à `true` dans `geo/config.php`.
+2. **Supprimez `geo-test.php`** une fois le test fait.
+3. Mettez en HTTPS (certificat Let's Encrypt gratuit chez l'hébergeur) : la géolocalisation l'exige.
+
+Réglages dans `geo/config.php` : `allow_ips` (adresses toujours autorisées, par exemple pour tester depuis l'étranger).
+Sans `geo/fr-ranges.php`, le site répond 503 (il ne s'ouvre jamais « par défaut »).
+
+### Option B — Cloudflare Pages
+
+`functions/_middleware.js` fait le même travail avec le pays fourni par Cloudflare (`ALLOW_ALL=1` pour le développement). `_headers` pose les en-têtes.
+
+### Limites
+
+- Le filtre par plages d'adresses suit le pays d'enregistrement des adresses : un visiteur en France via un VPN étranger est refusé, un VPN français contourne le filtre.
+- `robots.txt` n'est respecté que par les robots honnêtes (d'où le blocage par agent utilisateur) ; ne partagez pas l'adresse publiquement.
+- Le service worker garde l'appli en cache sur l'appareil : elle reste ouverte hors ligne, même si l'on part à l'étranger.
 
 ## Données
 
-`scripts/fetch-data.mjs` interroge le WFS du Grand Lyon (couche `sytral:tcl_sytral.tcllignebus`), exclut A/B/C/D, F1/F2, T*, RX,
-chaîne les morceaux de géométrie, simplifie à 2 m et écrit un fichier par ligne.
+Deux jeux publics (sans compte) de data.gouv.fr, tous deux du SYTRAL / TCL :
+[tracés des lignes de bus](https://www.data.gouv.fr/datasets/lignes-de-bus-du-reseau-transports-en-commun-lyonnais) et
+[points d'arrêt](https://www.data.gouv.fr/datasets/points-darret-du-reseau-transports-en-commun-lyonnais).
 
-> ⚠️ Ce script n'a pas pu être exécuté sur les vraies données lors de la création du projet (réseau bloqué).
-> Au premier lancement, vérifiez :
-> 1. que le nombre de lignes est plausible (le script affiche des exemples) ;
-> 2. que le sens `Aller`/`Retour` correspond bien au sens de dessin du tracé (départ = origine) ;
-> 3. que les noms de champs (`ligne`, `sens`, `nom_origine`, `nom_destination`, `couleur`) sont ceux de la couche
->    (adaptez `js/normalize.js` si besoin). Vous pouvez aussi passer `--url=` ou `--file=`.
+```bash
+npm run data                                   # télécharge les deux jeux
+npm run data -- --lines=lignes.zip --stops=arrets.zip   # ou depuis des fichiers locaux (shapefile .zip ou GeoJSON)
+```
+
+`scripts/fetch-data.mjs` reprojette (Lambert-93 -> WGS84), garde les tracés en service aujourd'hui (famille BUS, hors tracés expirés ou pas encore ouverts),
+chaîne les morceaux de géométrie, simplifie à 2 m, rattache à chaque tracé les arrêts de la ligne situés à moins de 30 m (dans l'ordre du tracé, bon sens A/R)
+et écrit un fichier par ligne (`data/routes/`) plus `data/index.json`. Les couleurs viennent du champ `couleur_he`.
+
+Contenu au 29/10/2026 : 789 lignes, dont 591 scolaires (JD), 1 775 tracés. Les lignes JD n'ont pas de terminus renseigné :
+ils sont déduits du nom du tracé (« 345101 ST-APPOLINAIRE>AMPLEPUIS »). Les lignes « BR… » sont les bus relais (métro, tram, funiculaire en panne).
 
 Le workflow `.github/workflows/update-data.yml` régénère et commit les données chaque mois (ou à la demande).
 
@@ -65,7 +99,7 @@ quand seule la catégorie de route est connue.
 
 ## Limites connues
 
-- Pas d'arrêts ni d'horaires (couche de tracés uniquement) : l'appli suit le tracé, elle n'annonce pas les arrêts.
+- Pas d'horaires : l'appli suit le tracé et annonce les arrêts, mais ne dit pas si vous êtes en avance ou en retard.
 - iOS Safari : le Wake Lock n'est fiable qu'à partir d'iOS 16.4 / 18.4 en mode « écran d'accueil ».
 - Après modification du code, incrémentez `VERSION` dans `sw.js` pour invalider le cache.
 

@@ -155,3 +155,10 @@ body.desktop-blocked > *:not(#desktop) { display: none !important; }
 .logo { white-space: nowrap; flex: none; }
 .chip { white-space: nowrap; }
 .brand-actions { margin-left: auto; }
+
+/* Filtres de lignes + prochain arrêt */
+.chips { display: flex; gap: 8px; margin: 10px 0 0; overflow-x: auto; }
+.chips .chip { flex: none; }
+.chip.on { background: var(--red); border-color: var(--red); color: #fff; }
+.next { display: block; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.next:empty { display: none; }

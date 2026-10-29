@@ -38,6 +38,11 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
       <input id="q" type="search" inputmode="search" autocomplete="off" placeholder="Rechercher une ligne ou un terminus" aria-label="Rechercher une ligne ou un terminus">
     </label>
+    <div class="chips" role="group" aria-label="Type de lignes">
+      <button class="chip on" data-f="all">Toutes</button>
+      <button class="chip" data-f="reg">Lignes</button>
+      <button class="chip" data-f="sco">Scolaires (JD)</button>
+    </div>
     <p id="data-status" class="muted" role="status"></p>
     <ul id="lines" class="list"></ul>
   </section>
@@ -61,6 +66,7 @@
       <div class="topcard-text">
         <small>Vers</small>
         <strong id="nav-dest"></strong>
+        <span id="nav-next" class="next"></span>
       </div>
       <div class="topcard-stats">
         <strong id="nav-remaining">–</strong>
